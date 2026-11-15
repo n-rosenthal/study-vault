@@ -16,8 +16,7 @@ permissions:
   contents: read
 
 env:
-  # AJUSTAR: onde este projeto está dentro do vault => ok?
-  PUBLISHING_DIR: project-code/internal/publishing/repository/study-vault
+  PUBLISHING_DIR: project-code/publishing
   
   # AJUSTAR: URL pública do site => ok?
   NR_SITE_URL: https://github.com/n-rosenthal/study-vault
