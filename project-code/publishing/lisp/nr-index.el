@@ -79,7 +79,7 @@
        :titulo (or (funcall kw "TITLE") (file-name-base arquivo))
        :id id-arquivo
        :ids (nreverse ids)
-       :tipo (downcase (or (funcall kw "NOTE_TYPE") "study"))
+       :tipo (downcase (or (funcall kw "NOTE_TYPE") "estudo"))
        :tags tags
        :data (or (nr/data-curta (funcall kw "DATE"))
                  (format-time-string

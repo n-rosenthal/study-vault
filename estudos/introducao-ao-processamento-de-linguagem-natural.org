@@ -1,0 +1,17 @@
+:PROPERTIES:
+:ID:       aab35cdf-2374-4953-b9d1-bf40baa83f70
+:END:
+#+TITLE: Introdução ao Processamento de Linguagem Natural
+#+DATE: [2026-11-16 seg]
+#+DESCRIPTION: 
+#+STATUS: seed
+#+NOTE_TYPE: study
+#+FILETAGS: :natural-language-processing:study:publish:
+
+* Ideia central
+
+* Detalhes
+
+* Exemplos
+
+* Perguntas em aberto

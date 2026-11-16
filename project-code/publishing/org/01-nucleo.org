@@ -1,30 +1,39 @@
 #+TITLE: Núcleo: configuração e índice do vault
-#+AUTHOR: n-rosenthal
+#+AUTHOR: Nicolas
 #+LANGUAGE: pt
 #+PROPERTY: header-args:emacs-lisp :mkdirp yes :comments no
 #+STARTUP: overview
 
 * Visão geral
-Este arquivo define as duas peças das quais todo o resto depende.
 
-| Módulo      | Função                                                                 |
-|-------------+------------------------------------------------------------------------|
+Este arquivo define as duas peças de que todo o resto depende.
+
+| Módulo        | Função                                                                 |
+|---------------+------------------------------------------------------------------------|
 | =nr-core.el=  | caminhos configuráveis, regras de privacidade (diretórios), utilidades |
-| =nr-index.el= | lê o vault *uma vez* e monta o índice: notas, ids, links, backlinks      |
+| =nr-index.el= | lê o vault *uma vez* e monta o índice: notas, ids, links, backlinks    |
 
-*Decisão central:* o build não consulta o banco do org-roam. O índice lê os =.org= diretamente (=:ID:=, =[[id:...]]=, =#+FILETAGS:= etc.). Isso elimina a dependência do org-roam e do SQLite no CI, torna o resultado determinístico e dá, de graça, uma única fonte de verdade para backlinks, grafo, blocos dinâmicos, feed e verificador de links. Blocos =src=, =example=, =export= e =comment= são ignorados na leitura, então exemplos de documentação (como o =:ID: xxxx= abaixo) não viram notas nem links.
+*Decisão central:* o build não consulta o banco do org-roam. O índice lê os
+=.org= diretamente (=:ID:=, =[[id:...]]=, =#+FILETAGS:= etc.). Isso elimina a
+dependência do org-roam e do SQLite no CI, torna o resultado determinístico e
+dá, de graça, uma única fonte de verdade para backlinks, grafo, blocos
+dinâmicos, feed e verificador de links. Blocos =src=, =example=, =export= e
+=comment= são ignorados na leitura, então exemplos de documentação (como o
+=:ID: xxxx= abaixo) não viram notas nem links.
 
 * =nr-core.el=
-Tudo que depende de caminho vem de variáveis de ambiente (úteis no CI) com padrões razoáveis:
 
-| Variável    | Padrão                                 | Uso                                  |
-|-------------+----------------------------------------+--------------------------------------|
-| =NR_VAULT=    | =~/org/roam/vault/export/=               | raiz das notas                       |
-| =NR_SAIDA=    | =~/org/roam/vault/export/site/public/=   | site gerado                          |
-| =NR_EXPORTS=  | =~/org/roam/export/=                     | PDFs avulsos (diário), fora do vault |
-| =NR_CACHE=    | =~/org/roam/vault/.cache/nr-publicacao/= | cache do ox-publish                  |
-| =NR_SITE_URL= | =https://SEU-USUARIO.github.io=          | URL base (feed, PDFs com links)      |
-| =NR_AUTOR=    | =n-rosenthal=                            | autor nos PDFs gerados               |
+Tudo que depende de caminho vem de variáveis de ambiente (úteis no CI) com
+padrões razoáveis:
+
+| Variável        | Padrão                         | Uso                                  |
+|-----------------+--------------------------------+--------------------------------------|
+| =NR_VAULT=      | =~/org/roam/=                  | raiz das notas                       |
+| =NR_SAIDA=      | =~/site/public/=               | site gerado                          |
+| =NR_EXPORTS=    | =~/org/exports/=               | PDFs avulsos (diário), fora do vault |
+| =NR_CACHE=      | =~/.cache/nr-publicacao/=      | cache do ox-publish                  |
+| =NR_SITE_URL=   | =https://SEU-USUARIO.github.io= | URL base (feed, PDFs com links)      |
+| =NR_AUTOR=      | =Nicolas=                      | autor nos PDFs gerados               |
 
 *Privacidade por diretório:* qualquer arquivo dentro de =diario/=, =private/=,
 =templates/=, =project-code/=, =_site/=, =node_modules/= ou de qualquer
@@ -48,35 +57,28 @@ caminho que contenha essas palavras.
   :group 'org
   :prefix "nr/")
 
-
-;; org/roam/project-code/publishing/
 (defconst nr/projeto-dir
   (file-name-directory
    (directory-file-name
     (file-name-directory (or load-file-name buffer-file-name default-directory))))
   "Raiz deste projeto (diretório pai de lisp/).")
 
-;; org/roam/project-code/publishing/assets
 (defconst nr/assets-dir (expand-file-name "assets/" nr/projeto-dir)
   "Diretório com estilos LaTeX, CSS, JS e páginas estáticas.")
 
-;; ?
 (defun nr/--diretorio-env (variavel padrao)
   "Diretório de VARIAVEL de ambiente, ou PADRAO, sempre com barra final."
   (file-name-as-directory (expand-file-name (or (getenv variavel) padrao))))
 
-;; ~/org/roam/vault/export/
-(defcustom nr/vault (nr/--diretorio-env "NR_VAULT" "~/org/roam/vault/export")
+(defcustom nr/vault (nr/--diretorio-env "NR_VAULT" "~/org/roam/")
   "Raiz do vault de notas."
   :type 'directory :group 'nr)
 
-;; ~/org/roam/vault/export/site/public/
-(defcustom nr/saida (nr/--diretorio-env "NR_SAIDA" "~/org/roam/vault/export/site/public/")
+(defcustom nr/saida (nr/--diretorio-env "NR_SAIDA" "~/site/public/")
   "Diretório onde o site é gerado."
   :type 'directory :group 'nr)
 
-;; /org/roam/export/
-(defcustom nr/exports (nr/--diretorio-env "NR_EXPORTS" "~/org/roam/export/")
+(defcustom nr/exports (nr/--diretorio-env "NR_EXPORTS" "~/org/exports/")
   "Onde ficam os PDFs avulsos (mantenha fora do vault)."
   :type 'directory :group 'nr)
 
@@ -85,20 +87,20 @@ caminho que contenha essas palavras.
   :type 'directory :group 'nr)
 
 (defcustom nr/site-url
-  (string-remove-suffix "/" (or (getenv "NR_SITE_URL") "https://n-rosenthal.github.io"))
+  (string-remove-suffix "/" (or (getenv "NR_SITE_URL") "https://SEU-USUARIO.github.io"))
   "URL base do site, sem barra final."
   :type 'string :group 'nr)
 
-(defcustom nr/autor (or (getenv "NR_AUTOR") "n-rosenthal")
+(defcustom nr/autor (or (getenv "NR_AUTOR") "Nicolas")
   "Autor usado nos documentos gerados."
   :type 'string :group 'nr)
 
-(defcustom nr/titulo-do-site "study-vault"
+(defcustom nr/titulo-do-site "Notas de estudo"
   "Título do índice e do feed."
   :type 'string :group 'nr)
 
 (defcustom nr/diretorios-proibidos
-  '("journal" "private" "templates" "project-code" "_site" "node_modules")
+  '("diario" "private" "templates" "project-code" "_site" "node_modules")
   "Diretórios (relativos ao vault) cujo conteúdo nunca é publicado."
   :type '(repeat string) :group 'nr)
 
@@ -137,6 +139,7 @@ O ox-publish compara o :exclude com o caminho *relativo* à raiz do projeto
      (not (string-prefix-p "." (file-name-nondirectory (directory-file-name dir)))))))
 
 ;;;; Texto
+
 (defun nr/escapar-html (texto)
   "Escapa TEXTO para uso em HTML/XML, inclusive em atributos."
   (let ((s (or texto "")))
@@ -161,26 +164,23 @@ Org >= 9.7 usa `org-export-before-processing-functions'; antes, `-hook'."
 ;;; nr-core.el ends here
 #+end_src
 
-#+RESULTS:
-: nr-core
-
 * =nr-index.el=
 
 Cada nota vira uma struct =nr/nota=:
 
-| Campo      | Origem                                                  |
-|------------+---------------------------------------------------------|
-| =titulo=     | =#+TITLE:= (ou o nome do arquivo)                         |
-| =id= / =ids=   | =:ID:= no cabeçalho do arquivo / todos os =:ID:= do arquivo |
-| =tipo=       | =#+NOTE_TYPE:= (=study, synthesis=, =journal=; padrão =study=)  |
-| =tags=       | =#+FILETAGS:=                                             |
-| =data=       | =#+DATE:= (ou a data de modificação)                      |
-| =status=     | =#+STATUS:= (=seed, =growing=, =mature=)                       |
-| =desc=       | =#+DESCRIPTION:=                                          |
-| =publicavel= | tag =publish=, sem =private=, fora de diretório proibido    |
-| =palavras=   | contagem (tempo de leitura)                             |
-| =links-id=   | ids alvo de =[[id:...]]=                                  |
-| =links-arq=  | alvos de =[[file:...]]= e =[[./...]]=                       |
+| Campo          | Origem                                                        |
+|----------------+---------------------------------------------------------------|
+| =titulo=       | =#+TITLE:= (ou o nome do arquivo)                              |
+| =id= / =ids=   | =:ID:= no cabeçalho do arquivo / todos os =:ID:= do arquivo    |
+| =tipo=         | =#+NOTE_TYPE:= (=estudo=, =sintese=, =diario=; padrão =estudo=) |
+| =tags=         | =#+FILETAGS:=                                                  |
+| =data=         | =#+DATE:= (ou a data de modificação)                           |
+| =status=       | =#+STATUS:= (=semente=, =crescendo=, =madura=)                 |
+| =desc=         | =#+DESCRIPTION:=                                               |
+| =publicavel=   | tag =publish=, sem =private=, fora de diretório proibido       |
+| =palavras=     | contagem (tempo de leitura)                                    |
+| =links-id=     | ids alvo de =[[id:...]]=                                       |
+| =links-arq=    | alvos de =[[file:...]]= e =[[./...]]=                          |
 
 Um link para o =:ID:= de um /heading/ conta como link para a nota inteira.
 Arquivos com =#+NOTE_TYPE: indice= (o índice gerado pelo próprio build) ficam
@@ -268,7 +268,7 @@ fora do índice.
        :titulo (or (funcall kw "TITLE") (file-name-base arquivo))
        :id id-arquivo
        :ids (nreverse ids)
-       :tipo (downcase (or (funcall kw "NOTE_TYPE") "study"))
+       :tipo (downcase (or (funcall kw "NOTE_TYPE") "estudo"))
        :tags tags
        :data (or (nr/data-curta (funcall kw "DATE"))
                  (format-time-string
@@ -366,6 +366,3 @@ fora do índice.
 (provide 'nr-index)
 ;;; nr-index.el ends here
 #+end_src
-
-#+RESULTS:
-: nr-index

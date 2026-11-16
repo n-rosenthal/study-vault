@@ -14,10 +14,10 @@
 ;;;; Tipos de nota
 
 (defconst nr/tipos-de-nota
-  '(("study"     :latex "notas-estudo" :css "estudo.css"  :opcoes nil)
-    ("synthesis" :latex "sintese"      :css "sintese.css" :opcoes "toc:3")
-    ("journal"   :latex "diario"       :css nil           :opcoes "toc:nil num:nil")
-    ("index"     :latex nil            :css nil           :opcoes nil))
+  '(("estudo"  :latex "notas-estudo" :css "estudo.css"  :opcoes nil)
+    ("sintese" :latex "sintese"      :css "sintese.css" :opcoes "toc:3")
+    ("diario"  :latex "diario"       :css nil           :opcoes "toc:nil num:nil")
+    ("indice"  :latex nil            :css nil           :opcoes nil))
   "Configuração de export por valor de #+NOTE_TYPE:.")
 
 (defconst nr/classes-latex
@@ -235,7 +235,7 @@
          (span (lambda (filtro valor)
                  (format "<span class=\"pf-meta\" data-pagefind-filter=\"%s[data-v]\" data-v=\"%s\"></span>"
                          filtro (nr/escapar-html valor)))))
-    (unless (equal tipo "index")
+    (unless (equal tipo "indice")
       (concat "\n#+begin_export html\n"
               (mapconcat #'identity
                          (append (list (funcall span "tipo" tipo))
@@ -270,7 +270,7 @@
     (when (or html latex)
       (let* ((kw (org-collect-keywords
                   '("NOTE_TYPE" "TITLE" "DESCRIPTION" "STATUS" "FILETAGS" "AUTHOR")))
-             (tipo (downcase (or (cadr (assoc "NOTE_TYPE" kw)) "study")))
+             (tipo (downcase (or (cadr (assoc "NOTE_TYPE" kw)) "estudo")))
              (cfg (cdr (assoc tipo nr/tipos-de-nota)))
              (id (nr/--id-do-buffer))
              (nota (and id (nr/nota-por-id id))))
@@ -287,7 +287,7 @@
 (defun nr/tipo-da-nota ()
   "Valor de #+NOTE_TYPE: do buffer atual (padrão \"estudo\")."
   (downcase (or (cadr (assoc "NOTE_TYPE" (org-collect-keywords '("NOTE_TYPE"))))
-                "study")))
+                "estudo")))
 
 (provide 'nr-export)
 ;;; nr-export.el ends here

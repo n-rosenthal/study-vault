@@ -13,35 +13,28 @@
   :group 'org
   :prefix "nr/")
 
-
-;; org/roam/project-code/publishing/
 (defconst nr/projeto-dir
   (file-name-directory
    (directory-file-name
     (file-name-directory (or load-file-name buffer-file-name default-directory))))
   "Raiz deste projeto (diretório pai de lisp/).")
 
-;; org/roam/project-code/publishing/assets
 (defconst nr/assets-dir (expand-file-name "assets/" nr/projeto-dir)
   "Diretório com estilos LaTeX, CSS, JS e páginas estáticas.")
 
-;; ?
 (defun nr/--diretorio-env (variavel padrao)
   "Diretório de VARIAVEL de ambiente, ou PADRAO, sempre com barra final."
   (file-name-as-directory (expand-file-name (or (getenv variavel) padrao))))
 
-;; ~/org/roam/vault/export/
-(defcustom nr/vault (nr/--diretorio-env "NR_VAULT" "~/org/roam/vault/export")
+(defcustom nr/vault (nr/--diretorio-env "NR_VAULT" "~/org/roam/")
   "Raiz do vault de notas."
   :type 'directory :group 'nr)
 
-;; ~/org/roam/vault/export/site/public/
-(defcustom nr/saida (nr/--diretorio-env "NR_SAIDA" "~/org/roam/vault/export/site/public/")
+(defcustom nr/saida (nr/--diretorio-env "NR_SAIDA" "~/site/public/")
   "Diretório onde o site é gerado."
   :type 'directory :group 'nr)
 
-;; /org/roam/export/
-(defcustom nr/exports (nr/--diretorio-env "NR_EXPORTS" "~/org/roam/export/")
+(defcustom nr/exports (nr/--diretorio-env "NR_EXPORTS" "~/org/exports/")
   "Onde ficam os PDFs avulsos (mantenha fora do vault)."
   :type 'directory :group 'nr)
 
@@ -50,20 +43,20 @@
   :type 'directory :group 'nr)
 
 (defcustom nr/site-url
-  (string-remove-suffix "/" (or (getenv "NR_SITE_URL") "https://n-rosenthal.github.io"))
+  (string-remove-suffix "/" (or (getenv "NR_SITE_URL") "https://SEU-USUARIO.github.io"))
   "URL base do site, sem barra final."
   :type 'string :group 'nr)
 
-(defcustom nr/autor (or (getenv "NR_AUTOR") "n-rosenthal")
+(defcustom nr/autor (or (getenv "NR_AUTOR") "Nicolas")
   "Autor usado nos documentos gerados."
   :type 'string :group 'nr)
 
-(defcustom nr/titulo-do-site "study-vault"
+(defcustom nr/titulo-do-site "Notas de estudo"
   "Título do índice e do feed."
   :type 'string :group 'nr)
 
 (defcustom nr/diretorios-proibidos
-  '("journal" "private" "templates" "project-code" "_site" "node_modules")
+  '("diario" "private" "templates" "project-code" "_site" "node_modules")
   "Diretórios (relativos ao vault) cujo conteúdo nunca é publicado."
   :type '(repeat string) :group 'nr)
 
@@ -102,6 +95,7 @@ O ox-publish compara o :exclude com o caminho *relativo* à raiz do projeto
      (not (string-prefix-p "." (file-name-nondirectory (directory-file-name dir)))))))
 
 ;;;; Texto
+
 (defun nr/escapar-html (texto)
   "Escapa TEXTO para uso em HTML/XML, inclusive em atributos."
   (let ((s (or texto "")))

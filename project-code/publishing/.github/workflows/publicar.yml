@@ -19,7 +19,7 @@ env:
   # AJUSTAR: onde este projeto está dentro do vault
   PUBLISHING_DIR: project-code/internal/publishing
   # AJUSTAR: URL pública do site
-  NR_SITE_URL: https://n-rosenthal.github.io
+  NR_SITE_URL: https://SEU-USUARIO.github.io
   NR_VAULT: ${{ github.workspace }}
   NR_SAIDA: ${{ github.workspace }}/_site
   NR_CACHE: ${{ github.workspace }}/.cache-nr

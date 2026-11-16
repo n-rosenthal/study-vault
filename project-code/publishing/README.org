@@ -5,6 +5,7 @@
 #+STARTUP: overview
 
 * O que é
+
 Um pipeline único, em Emacs Lisp literate, que transforma o vault de notas em:
 
 - *PDFs* bonitos de notas de *estudo*, *sínteses* e *diário* (LuaLaTeX);
@@ -12,8 +13,12 @@ Um pipeline único, em Emacs Lisp literate, que transforma o vault de notas em:
   backlinks, grafo global e local, selo de maturidade, feed Atom, modo escuro;
 - *deploy automático* via GitHub Actions, com testes e guardas de privacidade.
 
-  
+Este projeto /integra e substitui/ os quatro arquivos anteriores
+(=publicacao.org=, =deploy-e-diario.org=, =busca-sinteses-grafo.org=,
+=qualidade-feed-vizinhanca.org=). Não use mais aqueles.
+
 * Estrutura
+
 #+begin_example
 publishing/
 ├── README.org              este arquivo
@@ -28,7 +33,7 @@ publishing/
 │                           nr-relacionadas, nr-og, nr          (gerados)
 ├── assets/latex/           estudo.sty, sintese.sty, diario.sty    (gerados)
 ├── assets/site/            css/, js/, grafo.html                  (gerados)
-├── test/nr-test.el         22 testes ERT                          (gerado)
+├── test/nr-test.el         21 testes ERT                          (gerado)
 ├── scripts/ Makefile pagefind.yml .github/workflows/publicar.yml  (gerados)
 #+end_example
 
@@ -38,12 +43,12 @@ versionados para o CI rodar sem etapa extra, mas nunca devem ser editados à mã
 * Instalação
 
 1. Copie a pasta para dentro do vault, por exemplo
-   =~/org/roam/project-code/publishing/= (o diretório =project-code/=
+   =~/org/roam/project-code/internal/publishing/= (o diretório =project-code/=
    já é tratado como /nunca publicável/).
 2. No =init.el=:
 
 #+begin_src emacs-lisp
-(add-to-list 'load-path "~/org/roam/project-code/publishing/lisp")
+(add-to-list 'load-path "~/org/roam/project-code/internal/publishing/lisp")
 (require 'nr)
 ;; opcional, se o vault ou a URL não forem os padrões:
 ;; (setq nr/vault "~/org/roam/" nr/site-url "https://SEU-USUARIO.github.io")
@@ -94,7 +99,6 @@ Para mudar o título da caixa no PDF: =#+ATTR_LATEX: :options [title={Outro}]=.
 | =M-x nr/verificar-links=              | só o verificador                                                 |
 | =M-x nr/atualizar-dblocks=            | atualiza blocos =notas-por-tag= do vault                         |
 | =M-x nr/nova-nota=                    | cria nota (estudo/síntese/diário) com cabeçalho completo; pergunta se publica (padrão: não) |
-| =C-c n e= / =C-c n d= / =C-c n n=     | nova nota de estudo / entrada de diário (=diario/AAAA-MM-DD.org=) / qualquer tipo (após =(nr/instalar-atalhos)=) |
 | =M-x nr/indice-construir=             | relê o vault (use após editar, antes de exportar uma nota só)    |
 | =make test= / =make build=            | testes / build em lote                                           |
 
@@ -155,14 +159,14 @@ O site precisa ficar na raiz de um domínio (links absolutos como =/css/...=).
 
 * O que mudou em relação aos rascunhos
 
-| Antes                                                                                  | Agora                                                        |
-|----------------------------------------------------------------------------------------+--------------------------------------------------------------|
-| backlinks/grafo/sínteses consultavam o banco do org-roam                               | índice próprio lido dos =.org= (sem org-roam no CI)            |
-| =nr/publicar=, =nr/sitemap=, =nr/sitemap-entrada= redefinidos por arquivos carregados depois | uma definição de cada                                        |
-| 4 ganchos de export dependentes da ordem de carga                                      | um gancho (=nr/pre-export=) com ordem fixa                     |
-| caminhos fixos em =~/org/roam=, =~/site=                                                   | variáveis de ambiente / =defcustom=                            |
-| quatro =.org= com edições manuais entre eles                                             | quatro módulos que se carregam sozinhos (=(require 'nr)=)      |
-| sem testes                                                                             | 22 testes ERT (privacidade, links, HTML, LaTeX, PDF, diário) |
+| Antes                                              | Agora                                                      |
+|----------------------------------------------------+------------------------------------------------------------|
+| backlinks/grafo/sínteses consultavam o banco do org-roam | índice próprio lido dos =.org= (sem org-roam no CI)  |
+| =nr/publicar=, =nr/sitemap=, =nr/sitemap-entrada= redefinidos por arquivos carregados depois | uma definição de cada |
+| 4 ganchos de export dependentes da ordem de carga  | um gancho (=nr/pre-export=) com ordem fixa                 |
+| caminhos fixos em =~/org/roam=, =~/site=            | variáveis de ambiente / =defcustom=                         |
+| quatro =.org= com edições manuais entre eles       | quatro módulos que se carregam sozinhos (=(require 'nr)=)   |
+| sem testes                                         | 21 testes ERT (privacidade, links, HTML, LaTeX, PDF, diário) |
 
 *Bugs reais que os testes pegaram e que existiam nos rascunhos:*
 
@@ -181,7 +185,7 @@ O site precisa ficar na raiz de um domínio (links absolutos como =/css/...=).
 
 * Estado da verificação
 
-*Testado aqui* (Emacs 29.3, Org 9.6.15): os 22 testes passam, inclusive
+*Testado aqui* (Emacs 29.3, Org 9.6.15): os 21 testes passam, inclusive
 compilação real de PDF (LuaLaTeX) dos três tipos, com nota de margem e QR/URL
 (texto conferido via =pdftotext=); geração de PNG og:image; byte-compile sem avisos;
 publicação ponta a ponta com Pagefind 1.3.0 real (índice com filtros

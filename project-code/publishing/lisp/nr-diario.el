@@ -10,7 +10,7 @@
 (require 'ox-latex)
 (require 'calendar)
 
-(defcustom nr/diario-dir (expand-file-name "journal/" nr/vault)
+(defcustom nr/diario-dir (expand-file-name "diario/" nr/vault)
   "Diretório com os arquivos do diário."
   :type 'directory :group 'nr)
 
@@ -66,7 +66,7 @@
   "Texto Org do documento com ENTRADAS (lista de (TEMPO . TEXTO))."
   (concat (format "#+TITLE: Diário\n#+SUBTITLE: %s a %s\n#+AUTHOR: %s\n"
                   de ate nr/autor)
-          "#+NOTE_TYPE: journal\n#+OPTIONS: broken-links:mark\n\n"
+          "#+NOTE_TYPE: diario\n#+OPTIONS: broken-links:mark\n\n"
           (mapconcat (lambda (e) (nr/diario-normalizar-nivel (cdr e))) entradas "\n")
           "\n"))
 

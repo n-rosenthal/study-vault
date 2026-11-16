@@ -1,5 +1,5 @@
 #+TITLE: Export: PDF, HTML por tipo de nota e diário
-#+AUTHOR: n-rosenthal
+#+AUTHOR: Nicolas
 #+LANGUAGE: pt
 #+PROPERTY: header-args:emacs-lisp :mkdirp yes :comments no
 #+PROPERTY: header-args:latex :mkdirp yes :comments no
@@ -7,13 +7,14 @@
 
 * Visão geral
 
-| Módulo                              | Função                                                                                  |
-|-------------------------------------+-----------------------------------------------------------------------------------------|
-| =nr-export.el=                        | configura ox-latex/ox-html e aplica, *num único gancho*, tudo que depende do tipo da nota |
-| =nr-diario.el=                        | junta entradas do diário de um intervalo de datas num PDF                               |
-| =estudo.sty=, =sintese.sty=, =diario.sty= | estilos LaTeX                                                                           |
+| Módulo          | Função                                                                      |
+|-----------------+-----------------------------------------------------------------------------|
+| =nr-export.el=  | configura ox-latex/ox-html e aplica, *num único gancho*, tudo que depende do tipo da nota |
+| =nr-diario.el=  | junta entradas do diário de um intervalo de datas num PDF                   |
+| =estudo.sty=, =sintese.sty=, =diario.sty= | estilos LaTeX                                  |
 
 ** O gancho único =nr/pre-export=
+
 Antes eram quatro ganchos separados (tipo, backlinks, Pagefind, cabeçalho),
 cuja ordem dependia da ordem de carga dos arquivos. Agora há um só, com ordem
 fixa, que roda numa cópia temporária do buffer (o arquivo original nunca é
@@ -35,12 +36,12 @@ alterado):
 
 Defina com =#+NOTE_TYPE:=. Padrão: =estudo=.
 
-| Tipo      | Classe LaTeX | CSS extra   | Opções                     |
-|-----------+--------------+-------------+----------------------------|
-| =study=     | =notas-estudo= | =estudo.css=  | —                          |
-| =synthesis= | =sintese=      | =sintese.css= | =toc:3=                      |
-| =journal=   | =diario=       | —           | =toc:nil num:nil=            |
-| =index=     | —            | —           | (reservado: índice gerado) |
+| Tipo      | Classe LaTeX   | CSS extra     | Opções                  |
+|-----------+----------------+---------------+-------------------------|
+| =estudo=  | =notas-estudo= | =estudo.css=  | —                       |
+| =sintese= | =sintese=      | =sintese.css= | =toc:3=                 |
+| =diario=  | =diario=       | —             | =toc:nil num:nil=       |
+| =indice=  | —              | —             | (reservado: índice gerado) |
 
 Um tipo novo é uma linha em =nr/tipos-de-nota= mais uma classe em
 =nr/classes-latex=.
@@ -75,10 +76,10 @@ Observações de configuração:
 ;;;; Tipos de nota
 
 (defconst nr/tipos-de-nota
-  '(("study"     :latex "notas-estudo" :css "estudo.css"  :opcoes nil)
-    ("synthesis" :latex "sintese"      :css "sintese.css" :opcoes "toc:3")
-    ("journal"   :latex "diario"       :css nil           :opcoes "toc:nil num:nil")
-    ("index"     :latex nil            :css nil           :opcoes nil))
+  '(("estudo"  :latex "notas-estudo" :css "estudo.css"  :opcoes nil)
+    ("sintese" :latex "sintese"      :css "sintese.css" :opcoes "toc:3")
+    ("diario"  :latex "diario"       :css nil           :opcoes "toc:nil num:nil")
+    ("indice"  :latex nil            :css nil           :opcoes nil))
   "Configuração de export por valor de #+NOTE_TYPE:.")
 
 (defconst nr/classes-latex
@@ -296,7 +297,7 @@ Observações de configuração:
          (span (lambda (filtro valor)
                  (format "<span class=\"pf-meta\" data-pagefind-filter=\"%s[data-v]\" data-v=\"%s\"></span>"
                          filtro (nr/escapar-html valor)))))
-    (unless (equal tipo "index")
+    (unless (equal tipo "indice")
       (concat "\n#+begin_export html\n"
               (mapconcat #'identity
                          (append (list (funcall span "tipo" tipo))
@@ -331,7 +332,7 @@ Observações de configuração:
     (when (or html latex)
       (let* ((kw (org-collect-keywords
                   '("NOTE_TYPE" "TITLE" "DESCRIPTION" "STATUS" "FILETAGS" "AUTHOR")))
-             (tipo (downcase (or (cadr (assoc "NOTE_TYPE" kw)) "study")))
+             (tipo (downcase (or (cadr (assoc "NOTE_TYPE" kw)) "estudo")))
              (cfg (cdr (assoc tipo nr/tipos-de-nota)))
              (id (nr/--id-do-buffer))
              (nota (and id (nr/nota-por-id id))))
@@ -348,14 +349,11 @@ Observações de configuração:
 (defun nr/tipo-da-nota ()
   "Valor de #+NOTE_TYPE: do buffer atual (padrão \"estudo\")."
   (downcase (or (cadr (assoc "NOTE_TYPE" (org-collect-keywords '("NOTE_TYPE"))))
-                "study")))
+                "estudo")))
 
 (provide 'nr-export)
 ;;; nr-export.el ends here
 #+end_src
-
-#+RESULTS:
-: nr-export
 
 * Estilos LaTeX
 
@@ -517,7 +515,7 @@ Comandos: =M-x nr/exportar-diario= (pergunta "De" e "Até") e
 (require 'ox-latex)
 (require 'calendar)
 
-(defcustom nr/diario-dir (expand-file-name "journal/" nr/vault)
+(defcustom nr/diario-dir (expand-file-name "diario/" nr/vault)
   "Diretório com os arquivos do diário."
   :type 'directory :group 'nr)
 
@@ -573,7 +571,7 @@ Comandos: =M-x nr/exportar-diario= (pergunta "De" e "Até") e
   "Texto Org do documento com ENTRADAS (lista de (TEMPO . TEXTO))."
   (concat (format "#+TITLE: Diário\n#+SUBTITLE: %s a %s\n#+AUTHOR: %s\n"
                   de ate nr/autor)
-          "#+NOTE_TYPE: journal\n#+OPTIONS: broken-links:mark\n\n"
+          "#+NOTE_TYPE: diario\n#+OPTIONS: broken-links:mark\n\n"
           (mapconcat (lambda (e) (nr/diario-normalizar-nivel (cdr e))) entradas "\n")
           "\n"))
 
@@ -620,6 +618,3 @@ Com SO-TEX, gera apenas o .tex (sem compilar). Devolve o caminho do arquivo."
 (provide 'nr-diario)
 ;;; nr-diario.el ends here
 #+end_src
-
-#+RESULTS:
-: nr-diario

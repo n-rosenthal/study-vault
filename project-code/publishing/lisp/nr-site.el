@@ -26,7 +26,7 @@ No CI (variável de ambiente CI) isso sempre acontece."
   "Número de entradas do feed Atom."
   :type 'integer :group 'nr)
 
-(defconst nr/status-validos '("seed" "growing" "mature"))
+(defconst nr/status-validos '("semente" "crescendo" "madura"))
 
 (defun nr/ci-p ()
   "Non-nil se rodando em integração contínua (variável CI não vazia)."

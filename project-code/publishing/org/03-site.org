@@ -260,7 +260,7 @@ No CI (variável de ambiente CI) isso sempre acontece."
   "Número de entradas do feed Atom."
   :type 'integer :group 'nr)
 
-(defconst nr/status-validos '("seed" "growing" "mature"))
+(defconst nr/status-validos '("semente" "crescendo" "madura"))
 
 (defun nr/ci-p ()
   "Non-nil se rodando em integração contínua (variável CI não vazia)."
@@ -534,9 +534,6 @@ O ox-publish compara o :exclude com caminhos *relativos* ao vault."
 (provide 'nr-site)
 ;;; nr-site.el ends here
 #+end_src
-
-#+RESULTS:
-: nr-site
 
 * Visual (CSS)
 

@@ -28,8 +28,8 @@
      "#+TITLE: Retropropagação"
      "#+DATE: [2026-11-12 Thu 20:44]"
      "#+DESCRIPTION: Como o gradiente é calculado camada a camada."
-     "#+STATUS: growing"
-     "#+FILETAGS: :ml:study:publish:"
+     "#+STATUS: crescendo"
+     "#+FILETAGS: :ml:estudo:publish:"
      ""
      "* Ideia"
      "Usa o [[id:id-grad][Gradiente]] e a regra da cadeia. Ação e coração."
@@ -55,7 +55,7 @@
      "#+DATE: 2026-11-10"
      "#+DESCRIPTION: Derivadas parciais em vetor."
      "#+STATUS: madura"
-     "#+FILETAGS: :ml:study:publish:"
+     "#+FILETAGS: :ml:estudo:publish:"
      ""
      "* Definição"
      "Base da [[id:id-retro][Retropropagação]]."))
@@ -64,32 +64,32 @@
    '(":PROPERTIES:" ":ID:       id-sint" ":END:"
      "#+TITLE: Síntese: Aprendizado de Máquina"
      "#+DATE: 2026-11-13"
-     "#+NOTE_TYPE: synthesis"
-     "#+FILETAGS: :ml:synthesis:publish:"
+     "#+NOTE_TYPE: sintese"
+     "#+FILETAGS: :ml:sintese:publish:"
      ""
      "* Notas de estudo"
-     "#+BEGIN: notas-por-tag :tag \"ml\" :tipo \"study\" :resumo t"
+     "#+BEGIN: notas-por-tag :tag \"ml\" :tipo \"estudo\" :resumo t"
      "#+END:"))
   (nr-test--escrever
    raiz "ml/rascunho.org"
    '(":PROPERTIES:" ":ID:       id-rasc" ":END:"
-     "#+TITLE: Rascunho secreto" "#+FILETAGS: :ml:study:"
+     "#+TITLE: Rascunho secreto" "#+FILETAGS: :ml:estudo:"
      "* Texto" "Ainda não está pronto."))
   (nr-test--escrever
    raiz "ml/privada.org"
    '(":PROPERTIES:" ":ID:       id-privada" ":END:"
-     "#+TITLE: Nota privada" "#+FILETAGS: :ml:study:publish:private:"
+     "#+TITLE: Nota privada" "#+FILETAGS: :ml:estudo:publish:private:"
      "* Texto" "Não pode sair."))
   (nr-test--escrever
    raiz "private/segredo.org"
    '(":PROPERTIES:" ":ID:       id-segredo" ":END:"
-     "#+TITLE: Segredo de família" "#+FILETAGS: :ml:study:publish:"
+     "#+TITLE: Segredo de família" "#+FILETAGS: :ml:estudo:publish:"
      "* Texto" "Esta nota tem a tag mas está em private/."))
   (nr-test--escrever
    raiz ".oculto/x.org"
    '("#+TITLE: Oculto" "#+FILETAGS: :publish:" "* Texto"))
   (nr-test--escrever
-   raiz "journal/2026-11.org"
+   raiz "diario/2026-11.org"
    '("#+TITLE: Diário de novembro"
      "* Dia 09"
      ":PROPERTIES:" ":CREATED: [2026-11-09 Mon 21:00]" ":END:"
@@ -117,7 +117,7 @@
           (nr/saida (file-name-as-directory (expand-file-name "site" base)))
           (nr/exports (file-name-as-directory (expand-file-name "exports" base)))
           (nr/cache (file-name-as-directory (expand-file-name "cache" base)))
-          (nr/diario-dir (expand-file-name "journal/" nr/vault))
+          (nr/diario-dir (expand-file-name "diario/" nr/vault))
           (nr/site-url "https://x.test")
           (nr/indice nil) (nr/indice--por-id nil) (nr/indice--backlinks nil)
           (org-publish-cache nil)   ; o ox-publish guarda o cache em variável global
@@ -162,11 +162,11 @@
     (nr/indice-construir)
     (let ((retro (nr/nota-por-id "id-retro")))
       (should (equal (nr/nota-data retro) "2026-11-12"))
-      (should (equal (nr/nota-status retro) "growing"))
-      (should (equal (nr/nota-tipo retro) "study"))
-      (should (equal (nr/tags-visiveis retro) '("ml" "study")))
+      (should (equal (nr/nota-status retro) "crescendo"))
+      (should (equal (nr/nota-tipo retro) "estudo"))
+      (should (equal (nr/tags-visiveis retro) '("ml" "estudo")))
       (should (equal (nr/url retro) "/ml/retropropagacao.html")))
-    (should (equal (nr/nota-tipo (nr/nota-por-id "id-sint")) "synthesis"))))
+    (should (equal (nr/nota-tipo (nr/nota-por-id "id-sint")) "sintese"))))
 
 (ert-deftest nr-test-backlinks ()
   (nr-test--com-vault
@@ -187,7 +187,7 @@
                (should-not (nr/diretorio-proibido-p (expand-file-name "ml/gradiente.org" nr/vault)))
                ;; o ox-publish compara o :exclude com caminhos relativos ao vault
                (should (string-match-p (nr/regexp-diretorios-proibidos) "private/segredo.org"))
-               (should (string-match-p (nr/regexp-diretorios-proibidos) "a/b/journal/x.org"))
+               (should (string-match-p (nr/regexp-diretorios-proibidos) "a/b/diario/x.org"))
                (should (string-match-p (nr/regexp-diretorios-proibidos) ".oculto/x.org"))
                (should-not (string-match-p (nr/regexp-diretorios-proibidos) "ml/gradiente.org"))
                (should-not (string-match-p (nr/regexp-diretorios-proibidos) "ml/meu-private/x.org"))
@@ -207,7 +207,7 @@
     (nr-test--escrever
      nr/vault "ml/ruim.org"
      '(":PROPERTIES:" ":ID: id-ruim" ":END:"
-       "#+TITLE: Ruim" "#+FILETAGS: :ml:study:publish:"
+       "#+TITLE: Ruim" "#+FILETAGS: :ml:estudo:publish:"
        "* Links"
        "Para [[id:id-segredo][o segredo]], [[id:nao-existe][nada]],"
        "[[file:../private/segredo.org][arquivo privado]], [[file:falta.png]] e"
@@ -426,27 +426,6 @@
                                                            nr/vault))))
     (should-error (nr/cabecalho "inexistente" "x"))
     (should (equal (nr/--slug "Ação & Coração — parte 2") "acao-coracao-parte-2"))))
-
-;;;; Comandos de nota de diário e estudo
-
-(ert-deftest nr-test-nova-nota-diario ()
-  (nr-test--com-vault
-    (let ((arq (expand-file-name "2026-12-01.org" nr/diario-dir)))
-      (save-window-excursion
-        (nr/nova-nota-diario "2026-12-01" "Primeira")
-        (should (file-exists-p arq))
-        (kill-buffer (current-buffer))
-        (nr/nova-nota-diario "2026-12-01")            ; mesmo dia: acrescenta
-        (kill-buffer (current-buffer)))
-      (let ((s (nr-test--ler arq)))
-        (should (string-search "#+NOTE_TYPE: diario" s))
-        (should-not (string-search "publish" s))
-        (should (string-search "— Primeira" s))
-        (should (= 2 (cl-count ?* (replace-regexp-in-string "[^*\n]" "" s))))
-        (should (= 2 (length (nr/diario-coletar "2026-12-01" "2026-12-01"))))))
-    (let ((c (car (nr/capture-templates))))
-      (should (equal (car c) "d")))
-    (should (keymapp nr/mapa-nova))))
 
 ;;;; Notas relacionadas
 

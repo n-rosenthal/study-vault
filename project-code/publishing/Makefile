@@ -1,6 +1,6 @@
 .RECIPEPREFIX := >
 EMACS ?= emacs
-VAULT ?= $(HOME)/org/roam/vault/export
+VAULT ?= $(HOME)/org/roam
 
 .PHONY: tangle test compile build clean instalar-ci
 
