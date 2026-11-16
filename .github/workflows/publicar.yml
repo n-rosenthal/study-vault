@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths-ignore:
-      - 'journal/**'
+      - 'diario/**'
       - 'private/**'
   workflow_dispatch:
 
@@ -17,10 +17,7 @@ permissions:
 
 env:
   PUBLISHING_DIR: project-code/publishing
-  
-  # AJUSTAR: URL pública do site => ok?
-  NR_SITE_URL: https://github.com/n-rosenthal/study-vault
-
+  NR_SITE_URL: https://n-rosenthal.github.io
   NR_VAULT: ${{ github.workspace }}
   NR_SAIDA: ${{ github.workspace }}/_site
   NR_CACHE: ${{ github.workspace }}/.cache-nr
@@ -33,17 +30,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - run: ls -la; ls project-code 2>&1 | head
-
-      # O setup-emacs só instala o Nix sozinho se ele não existir, e o faz sem
-      # habilitar flakes (erro "experimental feature 'flakes' is disabled").
-      - name: Instalar Nix (com flakes)
-        uses: cachix/install-nix-action@v31
-        with:
-          extra_nix_config: |
-            experimental-features = nix-command flakes
-
-
 
       - name: Instalar Emacs
         uses: purcell/setup-emacs@v6.0
@@ -92,7 +78,6 @@ jobs:
         uses: peaceiris/actions-gh-pages@v4
         with:
           deploy_key: ${{ secrets.DEPLOY_KEY }}
-          # AJUSTAR: repositório público de destino
-          external_repository: n-rosenthal/n-rosenthal.github.io/study-vault
+          external_repository: n-rosenthal/n-rosenthal.github.io   # repositório público do site
           publish_branch: main
           publish_dir: ./_site
