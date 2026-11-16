@@ -1,0 +1,17 @@
+:PROPERTIES:
+:ID:       25dddabb-3b57-4a2a-ba40-ac358d8798cb
+:END:
+#+TITLE: Documentos e Corpus
+#+DATE: [2026-11-16 seg]
+#+DESCRIPTION: 
+#+STATUS: seed
+#+NOTE_TYPE: study
+#+FILETAGS: :natural-language-processing:publish:study:
+
+* Ideia central
+
+* Detalhes
+
+* Exemplos
+
+* Perguntas em aberto
