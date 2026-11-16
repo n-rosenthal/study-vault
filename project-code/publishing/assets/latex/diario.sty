@@ -1,0 +1,12 @@
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{diario}[2026/11/13 Estilo para diário]
+\RequirePackage{estudo}
+
+% Sem notas de margem: margens simétricas
+\geometry{left=2.6cm,right=2.6cm}
+% Sem numeração; a data de impressão no cabeçalho
+\setcounter{secnumdepth}{0}
+\addtokomafont{section}{\Large}
+\ohead{\sffamily\small\thepage}
+\ihead{\sffamily\small Diário}
+\endinput

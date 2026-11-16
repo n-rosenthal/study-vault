@@ -1,0 +1,874 @@
+#+TITLE: Site: sínteses, grafo, publicação e visual
+#+AUTHOR: Nicolas
+#+LANGUAGE: pt
+#+PROPERTY: header-args:emacs-lisp :mkdirp yes :comments no
+#+PROPERTY: header-args:css :mkdirp yes :comments no
+#+PROPERTY: header-args:js :mkdirp yes :comments no
+#+PROPERTY: header-args:html :mkdirp yes :comments no
+#+STARTUP: overview
+
+* Visão geral
+
+| Módulo / arquivo         | Função                                                               |
+|--------------------------+----------------------------------------------------------------------|
+| =nr-sinteses.el=         | bloco dinâmico =notas-por-tag= e atualização em lote                 |
+| =nr-grafo.el=            | gera =grafo.json= a partir do índice                                  |
+| =nr-site.el=             | projeto =ox-publish=, preâmbulo, índice com busca, feed, verificador de links, =nr/publicar= |
+| =assets/site/css/*.css=  | visual (claro/escuro), selos, grafo, destaque de código              |
+| =assets/site/js/grafo-local.js=, =assets/site/grafo.html= | grafo local por nota e grafo global (D3) |
+
+Tudo em =assets/site/= é copiado para a raiz do site no build.
+
+*O site precisa ficar na raiz do domínio* (=USUARIO.github.io= ou domínio
+próprio): os links internos são absolutos (=/css/...=, =/grafo.json=).
+
+* =nr-sinteses.el=
+
+Uma síntese lista sozinha as notas de uma tag:
+
+#+begin_example
+,#+BEGIN: notas-por-tag :tag "ml" :tipo "estudo" :ordem recentes :resumo t
+,#+END:
+#+end_example
+
+Atualize com =C-c C-x C-u= (no bloco) ou =C-u C-c C-x C-u= (arquivo todo).
+=nr/atualizar-dblocks= atualiza também os blocos =notas-relacionadas=
+(veja =05-extras.org=).
+
+| Parâmetro              | Efeito                                                          |
+|------------------------+-----------------------------------------------------------------|
+| =:tag "ml"=            | obrigatório                                                     |
+| =:tipo "estudo"=       | só notas com esse =#+NOTE_TYPE:= (padrão: =estudo=)             |
+| =:ordem recentes=      | por data decrescente; ou =titulo= para ordem alfabética         |
+| =:limite 10=           | máximo de itens                                                 |
+| =:resumo t=            | inclui o =#+DESCRIPTION:= de cada nota                          |
+| =:somente-publicaveis= | padrão =t=: omite notas sem a tag =publish= (ou com =private=)  |
+
+*Por que =:somente-publicaveis t= é o padrão:* o resultado do bloco é texto
+gravado no arquivo. Sem o filtro, o título de uma nota privada poderia vazar
+para uma síntese publicada.
+
+Notas com =:ID:= são ligadas por =[[id:...]]= (e por isso aparecem nos
+backlinks); as demais por link de arquivo relativo.
+
+#+begin_src emacs-lisp :tangle ../lisp/nr-sinteses.el
+;;; nr-sinteses.el --- Bloco dinâmico notas-por-tag -*- lexical-binding: t; -*-
+
+;; Gerado por tangle de org/03-site.org. Edite o .org, não este arquivo.
+
+;;; Code:
+
+(require 'nr-core)
+(require 'nr-index)
+(require 'org)
+
+(defun nr/--ordenar-notas (notas ordem)
+  (if (eq ordem 'titulo)
+      (sort notas (lambda (a b) (string< (downcase (nr/nota-titulo a))
+                                         (downcase (nr/nota-titulo b)))))
+    (sort notas (lambda (a b)
+                  (or (string> (nr/nota-data a) (nr/nota-data b))
+                      (and (string= (nr/nota-data a) (nr/nota-data b))
+                           (string< (nr/nota-rel a) (nr/nota-rel b))))))))
+
+(defun nr/--sem-colchetes (texto)
+  (replace-regexp-in-string "[][]" "" (or texto "")))
+
+(defun nr/--linha-nota (nota resumo)
+  "Item de lista Org para NOTA (com link por id, ou por arquivo se não houver id)."
+  (let* ((titulo (nr/--sem-colchetes (nr/nota-titulo nota)))
+         (link (if (nr/nota-id nota)
+                   (format "[[id:%s][%s]]" (nr/nota-id nota) titulo)
+                 (format "[[file:%s][%s]]"
+                         (file-relative-name (nr/nota-arquivo nota)
+                                             (file-name-directory (or (buffer-file-name)
+                                                                      default-directory)))
+                         titulo)))
+         (desc (and resumo (nr/nota-desc nota))))
+    (concat "- " link " — " (nr/nota-data nota)
+            (when (nr/nota-status nota) (format " · %s" (nr/nota-status nota)))
+            (when desc (format "\n  %s" desc)))))
+
+(defun org-dblock-write:notas-por-tag (params)
+  "Lista notas por tag. Parâmetros: veja org/03-site.org."
+  (let* ((tag (or (plist-get params :tag) (user-error ":tag é obrigatório")))
+         (tipo (or (plist-get params :tipo) "estudo"))
+         (ordem (or (plist-get params :ordem) 'recentes))
+         (limite (plist-get params :limite))
+         (resumo (plist-get params :resumo))
+         (so-publicaveis (if (plist-member params :somente-publicaveis)
+                             (plist-get params :somente-publicaveis)
+                           t))
+         (este (and (buffer-file-name) (expand-file-name (buffer-file-name))))
+         (notas (seq-filter
+                 (lambda (n)
+                   (and (member tag (nr/nota-tags n))
+                        (equal (nr/nota-tipo n) tipo)
+                        (not (equal (nr/nota-arquivo n) este))
+                        (or (not so-publicaveis) (nr/nota-publicavel n))))
+                 (nr/notas))))
+    (setq notas (nr/--ordenar-notas notas ordem))
+    (when limite (setq notas (seq-take notas limite)))
+    (insert (if notas
+                (mapconcat (lambda (n) (nr/--linha-nota n resumo)) notas "\n")
+              "/(nenhuma nota encontrada)/"))))
+
+(defun nr/--tem-dblock-p (arquivo)
+  (with-temp-buffer
+    (insert-file-contents arquivo)
+    (let ((case-fold-search t))
+      (re-search-forward "^[ \t]*#\\+BEGIN:[ \t]+notas-\\(?:por-tag\\|relacionadas\\)" nil t))))
+
+(defun nr/atualizar-dblocks ()
+  "Atualiza os blocos notas-por-tag de todo o vault (fora de diretórios proibidos).
+Devolve quantos arquivos mudaram."
+  (interactive)
+  (nr/indice-construir)
+  (let ((n 0))
+    (dolist (nota (nr/notas))
+      (let ((arq (nr/nota-arquivo nota)))
+        (when (and (not (nr/diretorio-proibido-p arq)) (nr/--tem-dblock-p arq))
+          (let ((buf (find-file-noselect arq)))
+            (with-current-buffer buf
+              ;; org-update-all-dblocks sempre marca o buffer como modificado:
+              ;; compare o conteúdo para só gravar (e contar) o que mudou de fato.
+              (let ((antes (buffer-string)))
+                (org-update-all-dblocks)
+                (when (not (equal antes (buffer-string)))
+                  (save-buffer)
+                  (setq n (1+ n))))
+              (set-buffer-modified-p nil))
+            (kill-buffer buf)))))
+    (message "Blocos atualizados em %d arquivo(s)" n)
+    n))
+
+(provide 'nr-sinteses)
+;;; nr-sinteses.el ends here
+#+end_src
+
+* =nr-grafo.el=
+
+O build gera =grafo.json= com um nó por nota publicável e uma aresta por par
+de notas ligadas por =[[id:...]]= (em qualquer direção, sem duplicar).
+
+#+begin_src emacs-lisp :tangle ../lisp/nr-grafo.el
+;;; nr-grafo.el --- Grafo de links em JSON -*- lexical-binding: t; -*-
+
+;; Gerado por tangle de org/03-site.org. Edite o .org, não este arquivo.
+
+;;; Code:
+
+(require 'nr-core)
+(require 'nr-index)
+(require 'json)
+
+(defun nr/grafo-id (nota)
+  "Identificador do nó de NOTA no JSON: caminho relativo sem extensão."
+  (file-name-sans-extension (nr/nota-rel nota)))
+
+(defun nr/grafo-dados ()
+  "Alist (nodes . [...]) (links . [...]) das notas publicáveis."
+  (let ((notas (nr/notas t)) nos arestas vistas)
+    (dolist (n notas)
+      (push `((id . ,(nr/grafo-id n))
+              (titulo . ,(nr/nota-titulo n))
+              (url . ,(nr/url n))
+              (tipo . ,(nr/nota-tipo n))
+              (status . ,(or (nr/nota-status n) ""))
+              (tags . ,(vconcat (nr/tags-visiveis n))))
+            nos))
+    (dolist (n notas)
+      (dolist (id (delete-dups (copy-sequence (nr/nota-links-id n))))
+        (when-let ((alvo (nr/nota-por-id id)))
+          (when (and (nr/nota-publicavel alvo) (not (eq alvo n)))
+            (let* ((a (nr/grafo-id n))
+                   (b (nr/grafo-id alvo))
+                   (chave (if (string< a b) (cons a b) (cons b a))))   ; sem direção
+              (unless (member chave vistas)
+                (push chave vistas)
+                (push `((source . ,a) (target . ,b)) arestas)))))))
+    `((nodes . ,(vconcat (nreverse nos)))
+      (links . ,(vconcat (nreverse arestas))))))
+
+(defun nr/gerar-grafo (&optional destino)
+  "Escreve grafo.json em DESTINO (padrão: raiz do site gerado)."
+  (interactive)
+  (let ((destino (or destino (expand-file-name "grafo.json" nr/saida)))
+        (dados (nr/grafo-dados))
+        (json-encoding-pretty-print nil))
+    (make-directory (file-name-directory destino) t)
+    (with-temp-file destino
+      (set-buffer-file-coding-system 'utf-8-unix)
+      (insert (json-encode dados)))
+    (message "Grafo: %d nós, %d arestas → %s"
+             (length (alist-get 'nodes dados)) (length (alist-get 'links dados)) destino)
+    destino))
+
+(provide 'nr-grafo)
+;;; nr-grafo.el ends here
+#+end_src
+
+* =nr-site.el=
+
+Tudo que monta o site, na ordem em que acontece em =nr/publicar=:
+
+1. reconstrói o índice;
+2. (CI, ou =nr/atualizar-dblocks-ao-publicar=) atualiza os blocos dinâmicos e reindexa;
+3. *verifica links* (aborta o build em modo batch; avisa no modo interativo);
+4. calcula a exclusão: diretórios proibidos + *todo arquivo não publicável*
+   (por isso o índice e as sínteses nunca listam notas privadas);
+5. publica HTML, anexos (imagens e PDFs do vault) e estáticos;
+6. gera =grafo.json= e =feed.xml=;
+7. roda o Pagefind (se houver =npx= e não estiver no CI, onde é um passo próprio).
+
+Detalhes que mudaram em relação aos rascunhos:
+
+- *Um só* =nr/sitemap= e *um só* =nr/publicar= (antes eram redefinidos por
+  arquivos carregados depois, e o resultado dependia da ordem de carga).
+- O índice (=index.html=) é montado a partir do índice do vault, ordenado por
+  data real, agrupado em Sínteses/Estudos, e *a lista fica fora da busca*.
+- O cache do =ox-publish= fica desligado por padrão: backlinks, sínteses e
+  "Citada em" dependem de /outras/ notas, então uma nota não mudada pode
+  precisar ser refeita. O site é pequeno; refazer tudo é rápido e correto.
+
+#+begin_src emacs-lisp :tangle ../lisp/nr-site.el
+;;; nr-site.el --- Publicação do site (ox-publish), feed e verificação -*- lexical-binding: t; -*-
+
+;; Gerado por tangle de org/03-site.org. Edite o .org, não este arquivo.
+
+;;; Code:
+
+(require 'nr-core)
+(require 'nr-index)
+(require 'nr-export)
+(require 'nr-sinteses)
+(require 'nr-relacionadas)
+(require 'nr-grafo)
+(require 'nr-og)
+(require 'ox-publish)
+
+(defcustom nr/usar-cache nil
+  "Se non-nil, usa o cache do ox-publish (mais rápido, menos correto)."
+  :type 'boolean :group 'nr)
+
+(defcustom nr/atualizar-dblocks-ao-publicar nil
+  "Se non-nil, atualiza os blocos dinâmicos do vault antes de publicar.
+No CI (variável de ambiente CI) isso sempre acontece."
+  :type 'boolean :group 'nr)
+
+(defcustom nr/feed-limite 30
+  "Número de entradas do feed Atom."
+  :type 'integer :group 'nr)
+
+(defconst nr/status-validos '("seed" "growing" "mature"))
+
+(defun nr/ci-p ()
+  "Non-nil se rodando em integração contínua (variável CI não vazia)."
+  (let ((v (getenv "CI"))) (and v (not (string-empty-p v)))))
+
+;;;; Metadados de página
+
+(defun nr/git-data (arquivo)
+  "Data (AAAA-MM-DD) do último commit de ARQUIVO; senão, a da modificação."
+  (let ((default-directory (file-name-directory arquivo)))
+    (or (ignore-errors
+          (with-temp-buffer
+            (when (zerop (call-process "git" nil '(t nil) nil "log" "-1" "--format=%cs"
+                                       "--" (file-name-nondirectory arquivo)))
+              (let ((s (string-trim (buffer-string))))
+                (and (not (string-empty-p s)) s)))))
+        (format-time-string
+         "%Y-%m-%d" (file-attribute-modification-time (file-attributes arquivo))))))
+
+(defun nr/minutos-de-leitura (nota)
+  (max 1 (ceiling (nr/nota-palavras nota) 200.0)))
+
+(defconst nr/nav-html
+  (concat "<nav class=\"nav\"><a href=\"/\">Início</a>"
+          "<a href=\"/grafo.html\">Grafo</a>"
+          "<a href=\"/feed.xml\">Feed</a></nav>"))
+
+(defun nr/preamble (info)
+  "Preâmbulo HTML: navegação e linha de metadados da nota."
+  (let* ((arq (plist-get info :input-file))
+         (nota (and arq (nr/nota-por-arquivo arq))))
+    (if (null nota)
+        nr/nav-html
+      (let ((status (nr/nota-status nota)))
+        (concat
+         nr/nav-html
+         "<div class=\"meta-nota\">"
+         (when status
+           (format "<span class=\"selo selo-%s\">%s</span>"
+                   (if (member status nr/status-validos) status "outro")
+                   (nr/escapar-html status)))
+         (format "<span>%d min de leitura</span>" (nr/minutos-de-leitura nota))
+         (format "<span>criada em %s</span>" (nr/nota-data nota))
+         (format "<span>atualizada em %s</span>" (nr/git-data arq))
+         "</div>")))))
+
+;;;; Índice do site (sitemap)
+
+(defconst nr/busca-html
+  "#+begin_export html
+<link href=\"/pagefind/pagefind-ui.css\" rel=\"stylesheet\">
+<script src=\"/pagefind/pagefind-ui.js\"></script>
+<div id=\"search\"></div>
+<script>
+window.addEventListener('DOMContentLoaded', function () {
+  if (typeof PagefindUI === 'undefined') { return; }
+  new PagefindUI({
+    element: '#search',
+    showSubResults: true,
+    showImages: false,
+    translations: {
+      placeholder: 'Buscar nas notas',
+      zero_results: 'Nenhum resultado para [SEARCH_TERM]',
+      one_result: '[COUNT] resultado para [SEARCH_TERM]',
+      many_results: '[COUNT] resultados para [SEARCH_TERM]'
+    }
+  });
+});
+</script>
+#+end_export
+")
+
+(defun nr/--item-do-indice (nota)
+  (format "- [[file:%s][%s]] — %s%s"
+          (nr/nota-rel nota)
+          (nr/--sem-colchetes (nr/nota-titulo nota))
+          (nr/nota-data nota)
+          (if (nr/nota-status nota) (format " · %s" (nr/nota-status nota)) "")))
+
+(defun nr/sitemap (titulo _lista)
+  "Conteúdo de index.org, montado a partir do índice do vault (ignora _LISTA)."
+  (let ((notas (nr/--ordenar-notas (nr/notas t) 'recentes)))
+    (concat
+     "#+TITLE: " titulo "\n"
+     "#+NOTE_TYPE: indice\n"
+     "#+OPTIONS: toc:nil num:nil\n\n"
+     nr/busca-html "\n"
+     "#+begin_export html\n<div data-pagefind-ignore>\n#+end_export\n"
+     (mapconcat
+      (lambda (grupo)
+        (let ((itens (seq-filter (lambda (n) (equal (nr/nota-tipo n) (car grupo))) notas)))
+          (when itens
+            (concat "* " (cdr grupo) "\n"
+                    (mapconcat #'nr/--item-do-indice itens "\n") "\n\n"))))
+      '(("sintese" . "Sínteses") ("estudo" . "Estudos"))
+      "")
+     "#+begin_export html\n</div>\n#+end_export\n")))
+
+;;;; Feed Atom
+
+(defun nr/gerar-feed ()
+  "Gera feed.xml (Atom) com as notas publicáveis mais recentes."
+  (interactive)
+  (when (string-search "SEU-USUARIO" nr/site-url)
+    (message "AVISO: nr/site-url ainda é o padrão (%s); defina NR_SITE_URL" nr/site-url))
+  (let* ((notas (seq-take (nr/--ordenar-notas (nr/notas t) 'recentes) nr/feed-limite))
+         (destino (expand-file-name "feed.xml" nr/saida))
+         (atualizado (if notas (nr/nota-data (car notas)) (format-time-string "%Y-%m-%d"))))
+    (make-directory nr/saida t)
+    (with-temp-file destino
+      (set-buffer-file-coding-system 'utf-8-unix)
+      (insert "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
+              "<feed xmlns=\"http://www.w3.org/2005/Atom\" xml:lang=\"pt\">\n"
+              (format "  <title>%s</title>\n" (nr/escapar-html nr/titulo-do-site))
+              (format "  <link href=\"%s/feed.xml\" rel=\"self\"/>\n" nr/site-url)
+              (format "  <link href=\"%s/\"/>\n" nr/site-url)
+              (format "  <id>%s/</id>\n" nr/site-url)
+              (format "  <updated>%sT00:00:00Z</updated>\n" atualizado))
+      (dolist (n notas)
+        (let ((url (concat nr/site-url (nr/url n))))
+          (insert "  <entry>\n"
+                  (format "    <title>%s</title>\n" (nr/escapar-html (nr/nota-titulo n)))
+                  (format "    <link href=\"%s\"/>\n" (nr/escapar-html url))
+                  (format "    <id>%s</id>\n" (nr/escapar-html url))
+                  (format "    <updated>%sT00:00:00Z</updated>\n" (nr/nota-data n))
+                  (if (nr/nota-desc n)
+                      (format "    <summary>%s</summary>\n" (nr/escapar-html (nr/nota-desc n)))
+                    "")
+                  "  </entry>\n")))
+      (insert "</feed>\n"))
+    (message "Feed: %d entradas → %s" (length notas) destino)
+    destino))
+
+;;;; Verificador de links
+
+(defun nr/links-problemas ()
+  "Lista de problemas de link nas notas publicáveis (strings; vazia se tudo OK)."
+  (let (problemas)
+    (dolist (n (nr/notas t))
+      (let ((rel (nr/nota-rel n)))
+        (dolist (id (delete-dups (copy-sequence (nr/nota-links-id n))))
+          (let ((alvo (nr/nota-por-id id)))
+            (cond
+             ((null alvo)
+              (push (format "%s: id desconhecido (%s)" rel id) problemas))
+             ((not (nr/nota-publicavel alvo))
+              (push (format "%s: aponta para nota não publicada \"%s\""
+                            rel (nr/nota-titulo alvo))
+                    problemas)))))
+        (dolist (caminho (delete-dups (copy-sequence (nr/nota-links-arq n))))
+          (let ((abs (expand-file-name caminho (file-name-directory (nr/nota-arquivo n)))))
+            (cond
+             ((not (file-exists-p abs))
+              (push (format "%s: arquivo inexistente (%s)" rel caminho) problemas))
+             ((and (string-suffix-p ".org" abs)
+                   (let ((alvo (nr/nota-por-arquivo abs)))
+                     (or (null alvo) (not (nr/nota-publicavel alvo)))))
+              (push (format "%s: aponta para arquivo não publicado (%s)" rel caminho)
+                    problemas)))))))
+    (nreverse problemas)))
+
+(defun nr/verificar-links ()
+  "Procura links quebrados ou que apontam para notas não publicadas.
+Em modo batch (CI), sinaliza erro se achar algum."
+  (interactive)
+  (let ((problemas (nr/links-problemas)))
+    (cond
+     ((null problemas) (message "Links OK") nil)
+     (noninteractive
+      (message "LINKS COM PROBLEMA:\n%s" (mapconcat #'identity problemas "\n"))
+      (error "%d link(s) com problema" (length problemas)))
+     (t
+      (with-current-buffer (get-buffer-create "*nr-links*")
+        (erase-buffer)
+        (insert (mapconcat #'identity problemas "\n") "\n")
+        (pop-to-buffer (current-buffer)))
+      problemas))))
+
+;;;; Projeto ox-publish
+
+(defun nr/regexp-exclusao ()
+  "Regexp (para :exclude) de diretórios proibidos e de todo arquivo não publicável.
+O ox-publish compara o :exclude com caminhos *relativos* ao vault."
+  (let ((fora (mapcar #'nr/nota-rel (seq-remove #'nr/nota-publicavel (nr/notas)))))
+    (mapconcat #'identity
+               (delq nil
+                     (list (nr/regexp-diretorios-proibidos)
+                           (when fora (concat "\\`" (regexp-opt fora) "\\'"))))
+               "\\|")))
+
+(defun nr/projetos-definir ()
+  "Define `org-publish-project-alist'. Chame depois de (re)construir o índice."
+  (setq org-publish-project-alist
+        `(("estudos-org"
+           :base-directory ,nr/vault
+           :base-extension "org"
+           :recursive t
+           :publishing-directory ,nr/saida
+           :exclude ,(nr/regexp-exclusao)
+           :publishing-function org-html-publish-to-html
+           :with-toc t
+           :section-numbers nil
+           :html-doctype "html5"
+           :html-html5-fancy t
+           :html-validation-link nil
+           :html-head-include-default-style nil
+           :html-head-include-scripts nil
+           :html-preamble nr/preamble
+           :html-postamble nil
+           :auto-sitemap t
+           :sitemap-filename "index.org"
+           :sitemap-title ,nr/titulo-do-site
+           :sitemap-function nr/sitemap)
+          ("estudos-anexos"
+           :base-directory ,nr/vault
+           :base-extension "png\\|jpg\\|jpeg\\|gif\\|svg\\|webp\\|pdf"
+           :recursive t
+           :publishing-directory ,nr/saida
+           :exclude ,(nr/regexp-diretorios-proibidos)
+           :publishing-function org-publish-attachment)
+          ("estudos-static"
+           :base-directory ,(expand-file-name "site/" nr/assets-dir)
+           :base-extension "css\\|js\\|png\\|jpg\\|svg\\|woff2\\|html"
+           :recursive t
+           :publishing-directory ,nr/saida
+           :publishing-function org-publish-attachment)
+          ("estudos" :components ("estudos-org" "estudos-anexos" "estudos-static")))))
+
+;;;; Busca (Pagefind)
+
+(defcustom nr/pagefind-versao "1.3.0"
+  "Versão do Pagefind usada via npx (fixada para builds reprodutíveis)."
+  :type 'string :group 'nr)
+
+(defun nr/indexar-busca ()
+  "Roda o Pagefind sobre o site gerado (configuração em pagefind.yml)."
+  (interactive)
+  (if-let ((npx (executable-find "npx")))
+      (let ((default-directory nr/projeto-dir))
+        (message "Indexando a busca (Pagefind %s)..." nr/pagefind-versao)
+        (unless (zerop (call-process npx nil "*nr-pagefind*" nil
+                                     "-y" (concat "pagefind@" nr/pagefind-versao)
+                                     "--site" (directory-file-name nr/saida)))
+          (error "Pagefind falhou; veja o buffer *nr-pagefind*")))
+    (message "npx não encontrado: busca não indexada")))
+
+;;;; Publicação
+
+(defun nr/publicar (&optional forcar)
+  "Publica o site completo. Com FORCAR, ignora o cache do ox-publish."
+  (interactive "P")
+  (nr/indice-construir)
+  (when (or (nr/ci-p) nr/atualizar-dblocks-ao-publicar)
+    (nr/atualizar-dblocks)
+    (nr/indice-construir))
+  (nr/verificar-links)
+  (nr/projetos-definir)
+  (make-directory nr/saida t)
+  (let ((org-publish-timestamp-directory (file-name-as-directory
+                                          (expand-file-name "timestamps/" nr/cache)))
+        (org-publish-cache nil))   ; não reaproveita cache de outro diretório
+    (make-directory org-publish-timestamp-directory t)
+    (org-publish "estudos" (or forcar (not nr/usar-cache))))
+  (nr/gerar-grafo)
+  (nr/gerar-feed)
+  (nr/gerar-og)
+  (unless (nr/ci-p)
+    (nr/indexar-busca))
+  (message "Site publicado em %s" nr/saida))
+
+(provide 'nr-site)
+;;; nr-site.el ends here
+#+end_src
+
+#+RESULTS:
+: nr-site
+
+* Visual (CSS)
+
+Um arquivo base (=site.css=) com tema claro/escuro, e dois pequenos por tipo.
+Tudo usa as mesmas variáveis, então mudar a paleta é mudar um bloco =:root=.
+
+#+begin_src css :tangle ../assets/site/css/site.css
+:root {
+  --fundo: #fdfdfc; --texto: #222; --suave: #666;
+  --destaque: #1f4e8c; --borda: #e2e2e0; --codigo: #f4f4f2;
+  --c-estudo: var(--destaque); --c-sintese: #2e7d4f; --c-outro: var(--suave);
+  --semente: #b7791f; --madura: #2e7d4f;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fundo: #17181a; --texto: #e6e6e3; --suave: #9a9a96;
+    --destaque: #7fb0ea; --borda: #34363a; --codigo: #202225;
+    --c-sintese: #6fcf97; --semente: #e0b05a; --madura: #6fcf97;
+  }
+}
+
+html { font-size: 18px; }
+body {
+  background: var(--fundo); color: var(--texto);
+  font-family: "Libertinus Serif", Georgia, serif;
+  line-height: 1.65; margin: 0 auto; padding: 2rem 1.2rem; max-width: 46rem;
+}
+h1, h2, h3, h4 { font-family: system-ui, sans-serif; color: var(--destaque); line-height: 1.25; }
+a { color: var(--destaque); }
+img { max-width: 100%; height: auto; }
+.title { margin-bottom: 0.2rem; }
+.subtitle { color: var(--suave); margin-top: 0; }
+
+/* Código */
+pre, code { background: var(--codigo); font-size: 0.85em; }
+pre { padding: 0.8rem 1rem; overflow-x: auto; border-radius: 6px; border: 1px solid var(--borda); }
+code { padding: 0.1em 0.3em; border-radius: 3px; }
+pre code { background: none; padding: 0; }
+.org-comment, .org-comment-delimiter, .org-doc { color: var(--suave); font-style: italic; }
+.org-keyword, .org-builtin, .org-preprocessor { color: var(--destaque); font-weight: 600; }
+.org-string { color: var(--madura); }
+.org-function-name, .org-type { color: #8a4fbf; }
+.org-variable-name, .org-constant { color: var(--semente); }
+
+/* Tabelas e sumário */
+table { border-collapse: collapse; margin: 1rem 0; }
+th, td { border-bottom: 1px solid var(--borda); padding: 0.35rem 0.7rem; }
+#table-of-contents { border: 1px solid var(--borda); border-radius: 6px; padding: 0.5rem 1rem; }
+#table-of-contents h2 { font-size: 1rem; margin: 0.3rem 0; }
+
+/* Caixas (blocos especiais do Org) */
+.definicao, .teorema, .exemplo, .nota {
+  border-left: 4px solid var(--destaque); background: var(--codigo);
+  padding: 0.6rem 1rem; margin: 1rem 0; border-radius: 0 6px 6px 0;
+}
+.definicao::before { content: "Definição"; font: 600 0.8rem system-ui; color: var(--destaque); }
+.teorema::before   { content: "Teorema";   font: 600 0.8rem system-ui; color: var(--destaque); }
+.exemplo::before   { content: "Exemplo";   font: 600 0.8rem system-ui; color: var(--destaque); }
+.nota::before      { content: "Nota";      font: 600 0.8rem system-ui; color: var(--destaque); }
+
+/* Nota de margem (no PDF vai para a margem; na web, um aparte) */
+.margem {
+  font-size: 0.85rem; color: var(--suave); margin: 0.8rem 0;
+  border-left: 2px solid var(--borda); padding-left: 0.8rem;
+}
+
+/* Navegação e metadados */
+.nav { display: flex; gap: 1.2rem; font: 0.9rem system-ui, sans-serif; margin-bottom: 1.5rem; }
+.nav a { text-decoration: none; }
+.nav a:hover { text-decoration: underline; }
+.meta-nota {
+  display: flex; flex-wrap: wrap; gap: 0.3rem 1rem;
+  font: 0.8rem system-ui, sans-serif; color: var(--suave); margin: 0 0 1.2rem;
+}
+.selo { padding: 0.05rem 0.6rem; border-radius: 999px; border: 1px solid currentColor; font-weight: 600; }
+.selo-semente   { color: var(--semente); }
+.selo-crescendo { color: var(--destaque); }
+.selo-madura    { color: var(--madura); }
+.selo-outro     { color: var(--suave); }
+.backlinks { padding-left: 1.2rem; }
+.pf-meta { display: none; }
+#postamble { color: var(--suave); font-size: 0.8rem; margin-top: 3rem; }
+
+/* Busca (Pagefind) */
+#search {
+  --pagefind-ui-primary: var(--destaque);
+  --pagefind-ui-text: var(--texto);
+  --pagefind-ui-background: var(--fundo);
+  --pagefind-ui-border: var(--borda);
+  --pagefind-ui-tag: var(--codigo);
+  --pagefind-ui-font: system-ui, sans-serif;
+  margin: 1rem 0 2rem;
+}
+
+/* Grafo global e local */
+.grafo-controles { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; margin: 0.8rem 0; }
+.grafo-controles input {
+  font: inherit; padding: 0.35rem 0.6rem; border: 1px solid var(--borda);
+  border-radius: 6px; background: var(--fundo); color: var(--texto);
+}
+.chave { font: 0.8rem system-ui, sans-serif; margin-right: 0.8rem; }
+.chave::before { content: "●"; margin-right: 0.3rem; color: var(--c-outro); }
+.chave.tipo-estudo::before  { color: var(--c-estudo); }
+.chave.tipo-sintese::before { color: var(--c-sintese); }
+#grafo, #grafo-local svg {
+  width: 100%; border: 1px solid var(--borda); border-radius: 8px; background: var(--codigo);
+}
+#grafo { height: 70vh; cursor: grab; }
+#grafo-local { margin-top: 3rem; }
+#grafo-local svg { height: 260px; }
+#grafo line, #grafo-local line { stroke: var(--suave); stroke-opacity: 0.4; }
+#grafo line.esmaecida { stroke-opacity: 0.05; }
+.no circle { fill: var(--c-outro); stroke: var(--fundo); stroke-width: 1.5; cursor: pointer; }
+.no.tipo-estudo circle  { fill: var(--c-estudo); }
+.no.tipo-sintese circle { fill: var(--c-sintese); }
+.no text { font: 11px system-ui, sans-serif; fill: var(--texto); opacity: 0; pointer-events: none; }
+.no.rotulo text, .no.ativo text, .no:hover text, #grafo-local .no text { opacity: 1; }
+.no.esmaecido { opacity: 0.15; }
+.no.fora { opacity: 0.08; }
+#grafo-local .no.atual circle { stroke: var(--texto); stroke-width: 2.5; }
+#+end_src
+
+#+begin_src css :tangle ../assets/site/css/estudo.css
+/* Notas de estudo: largura confortável para leitura e código. */
+body { max-width: 48rem; }
+#+end_src
+
+#+begin_src css :tangle ../assets/site/css/sintese.css
+/* Sínteses: sumário fixo à esquerda em telas largas. */
+@media (min-width: 70rem) {
+  body { max-width: 50rem; margin-left: 22rem; }
+  #table-of-contents {
+    position: fixed; top: 2rem; left: 2rem; width: 17rem;
+    max-height: 85vh; overflow-y: auto; font-size: 0.85rem;
+  }
+}
+#+end_src
+
+* Grafo (JavaScript e página)
+
+*Grafo local:* em cada nota, um mini-grafo com ela e as vizinhas diretas. Casa
+a página atual com o nó do =grafo.json= ignorando =.html= e a barra final, pois
+o GitHub Pages serve =/nota= e =/nota.html= igualmente. Se a nota não tem
+links, a seção não aparece.
+
+#+begin_src js :tangle ../assets/site/js/grafo-local.js
+(function () {
+  function normalizar(caminho) {
+    return decodeURI(caminho).replace(/\.html$/, '').replace(/\/$/, '');
+  }
+
+  function carregarD3(cb) {
+    if (window.d3) { cb(); return; }
+    var s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js';
+    s.onload = cb;
+    document.head.appendChild(s);
+  }
+
+  function desenhar(svgEl, nodes, links, idAtual) {
+    var svg = d3.select(svgEl);
+    var largura = svgEl.clientWidth, altura = svgEl.clientHeight;
+    var sim = d3.forceSimulation(nodes)
+      .force('link', d3.forceLink(links).id(function (d) { return d.id; }).distance(70))
+      .force('carga', d3.forceManyBody().strength(-180))
+      .force('centro', d3.forceCenter(largura / 2, altura / 2))
+      .force('colisao', d3.forceCollide().radius(16));
+
+    var aresta = svg.append('g').selectAll('line').data(links).join('line');
+    var no = svg.append('g').selectAll('g').data(nodes).join('g')
+      .attr('class', function (d) {
+        return 'no tipo-' + d.tipo + (d.id === idAtual ? ' atual' : '');
+      });
+    no.append('circle').attr('r', function (d) { return d.id === idAtual ? 9 : 6; });
+    no.append('text').text(function (d) { return d.titulo; }).attr('x', 12).attr('y', 4);
+    no.filter(function (d) { return d.id !== idAtual; })
+      .on('click', function (e, d) { window.location.href = d.url; });
+
+    sim.on('tick', function () {
+      aresta.attr('x1', function (l) { return l.source.x; })
+            .attr('y1', function (l) { return l.source.y; })
+            .attr('x2', function (l) { return l.target.x; })
+            .attr('y2', function (l) { return l.target.y; });
+      no.attr('transform', function (d) {
+        var x = Math.max(10, Math.min(largura - 10, d.x));
+        var y = Math.max(10, Math.min(altura - 10, d.y));
+        return 'translate(' + x + ',' + y + ')';
+      });
+    });
+  }
+
+  function iniciar() {
+    var conteudo = document.querySelector('#content');
+    if (!conteudo) return;
+    var atualUrl = normalizar(location.pathname);
+
+    fetch('/grafo.json').then(function (r) { return r.json(); }).then(function (dados) {
+      var atual = dados.nodes.find(function (n) { return normalizar(n.url) === atualUrl; });
+      if (!atual) return;
+
+      var ids = new Set([atual.id]);
+      dados.links.forEach(function (l) {
+        if (l.source === atual.id) ids.add(l.target);
+        if (l.target === atual.id) ids.add(l.source);
+      });
+      if (ids.size < 2) return;
+
+      var nodes = dados.nodes
+        .filter(function (n) { return ids.has(n.id); })
+        .map(function (n) { return Object.assign({}, n); });
+      var links = dados.links
+        .filter(function (l) { return ids.has(l.source) && ids.has(l.target); })
+        .map(function (l) { return { source: l.source, target: l.target }; });
+
+      var secao = document.createElement('section');
+      secao.id = 'grafo-local';
+      secao.innerHTML = '<h2>Vizinhança</h2><svg role="img" aria-label="Notas ligadas a esta"></svg>';
+      conteudo.appendChild(secao);
+      carregarD3(function () { desenhar(secao.querySelector('svg'), nodes, links, atual.id); });
+    }).catch(function () { /* sem grafo.json: ignora */ });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', iniciar);
+  } else {
+    iniciar();
+  }
+})();
+#+end_src
+
+*Grafo global* (=/grafo.html=): zoom, arrastar, destaque dos vizinhos ao passar o
+mouse, filtro por título ou tag, cor por tipo.
+
+#+begin_src html :tangle ../assets/site/grafo.html
+<!doctype html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Grafo de notas</title>
+  <link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+<nav class="nav"><a href="/">Início</a><a href="/grafo.html">Grafo</a><a href="/feed.xml">Feed</a></nav>
+<h1 class="title">Grafo de notas</h1>
+<p class="subtitle">Clique num nó para abrir a nota. Arraste os nós; role para dar zoom.</p>
+<div class="grafo-controles">
+  <input id="filtro" type="search" placeholder="Filtrar por título ou tag" aria-label="Filtrar nós">
+  <span id="legenda"></span>
+</div>
+<svg id="grafo" role="img" aria-label="Grafo de links entre notas"></svg>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script>
+fetch('/grafo.json').then(function (r) { return r.json(); }).then(function (dados) {
+  var nodes = dados.nodes, links = dados.links;
+  var svg = d3.select('#grafo');
+  var largura = svg.node().clientWidth, altura = svg.node().clientHeight;
+  var idDe = function (x) { return typeof x === 'object' ? x.id : x; };
+
+  var grau = new Map(nodes.map(function (n) { return [n.id, 0]; }));
+  links.forEach(function (l) {
+    grau.set(idDe(l.source), (grau.get(idDe(l.source)) || 0) + 1);
+    grau.set(idDe(l.target), (grau.get(idDe(l.target)) || 0) + 1);
+  });
+  nodes.forEach(function (n) { n.grau = grau.get(n.id) || 0; });
+  var raio = function (n) { return 4 + Math.sqrt(n.grau) * 2.5; };
+
+  var g = svg.append('g');
+  svg.call(d3.zoom().scaleExtent([0.2, 5]).on('zoom', function (e) {
+    g.attr('transform', e.transform);
+  }));
+
+  var sim = d3.forceSimulation(nodes)
+    .force('link', d3.forceLink(links).id(function (d) { return d.id; }).distance(60))
+    .force('carga', d3.forceManyBody().strength(-120))
+    .force('centro', d3.forceCenter(largura / 2, altura / 2))
+    .force('colisao', d3.forceCollide().radius(function (d) { return raio(d) + 2; }));
+
+  var aresta = g.append('g').selectAll('line').data(links).join('line');
+
+  var no = g.append('g').selectAll('g').data(nodes).join('g')
+    .attr('class', function (d) { return 'no tipo-' + d.tipo + (d.grau >= 3 ? ' rotulo' : ''); })
+    .call(d3.drag()
+      .on('start', function (e, d) { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+      .on('drag', function (e, d) { d.fx = e.x; d.fy = e.y; })
+      .on('end', function (e, d) { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null; }));
+
+  no.append('circle').attr('r', raio);
+  no.append('text').text(function (d) { return d.titulo; })
+    .attr('x', function (d) { return raio(d) + 4; }).attr('y', 4);
+  no.on('click', function (e, d) { window.location.href = d.url; });
+
+  var vizinhos = new Map(nodes.map(function (n) { return [n.id, new Set([n.id])]; }));
+  links.forEach(function (l) {
+    vizinhos.get(idDe(l.source)).add(idDe(l.target));
+    vizinhos.get(idDe(l.target)).add(idDe(l.source));
+  });
+  no.on('mouseover', function (e, d) {
+    var v = vizinhos.get(d.id);
+    no.classed('esmaecido', function (n) { return !v.has(n.id); });
+    aresta.classed('esmaecida', function (l) {
+      return idDe(l.source) !== d.id && idDe(l.target) !== d.id;
+    });
+    d3.select(e.currentTarget).classed('ativo', true);
+  }).on('mouseout', function () {
+    no.classed('esmaecido', false).classed('ativo', false);
+    aresta.classed('esmaecida', false);
+  });
+
+  sim.on('tick', function () {
+    aresta.attr('x1', function (l) { return l.source.x; })
+          .attr('y1', function (l) { return l.source.y; })
+          .attr('x2', function (l) { return l.target.x; })
+          .attr('y2', function (l) { return l.target.y; });
+    no.attr('transform', function (d) { return 'translate(' + d.x + ',' + d.y + ')'; });
+  });
+
+  document.querySelector('#filtro').addEventListener('input', function (e) {
+    var q = e.target.value.trim().toLowerCase();
+    no.classed('fora', function (d) {
+      return q && !(d.titulo.toLowerCase().indexOf(q) >= 0 ||
+                    d.tags.some(function (t) { return t.toLowerCase().indexOf(q) >= 0; }));
+    });
+  });
+
+  var tipos = Array.from(new Set(nodes.map(function (n) { return n.tipo; })));
+  document.querySelector('#legenda').innerHTML = tipos.map(function (t) {
+    return '<span class="chave tipo-' + t + '">' + t + '</span>';
+  }).join('');
+});
+</script>
+</body>
+</html>
+#+end_src

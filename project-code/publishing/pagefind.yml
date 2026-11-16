@@ -1,0 +1,8 @@
+root_selector: "#content"
+exclude_selectors:
+  - "#table-of-contents"
+  - "#postamble"
+  - "#search"
+  - "#grafo-local"
+  - ".backlinks"
+force_language: pt

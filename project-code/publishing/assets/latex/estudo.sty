@@ -1,0 +1,85 @@
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{estudo}[2026/11/13 Estilo base para notas de estudo]
+
+\RequirePackage{fontspec}
+\RequirePackage[brazilian]{babel}
+\RequirePackage{csquotes}
+\RequirePackage{microtype}
+\RequirePackage{xcolor}
+\RequirePackage{booktabs}
+\RequirePackage{enumitem}
+\RequirePackage[a4paper,top=2.6cm,bottom=2.6cm,left=2.4cm,right=5.6cm,
+  marginparwidth=3.6cm,marginparsep=0.5cm]{geometry}
+\RequirePackage[most]{tcolorbox}
+\RequirePackage{listings}
+\RequirePackage{marginnote}
+\RequirePackage{environ}
+\IfFileExists{qrcode.sty}{\RequirePackage{qrcode}}{}
+\RequirePackage[headsepline]{scrlayer-scrpage}
+\RequirePackage[colorlinks=true,linkcolor=azulnota,urlcolor=azulnota,citecolor=azulnota]{hyperref}
+
+% Fontes com alternativas: funciona mesmo sem Libertinus instalada.
+\IfFontExistsTF{Libertinus Serif}{\setmainfont{Libertinus Serif}}%
+  {\IfFontExistsTF{Linux Libertine O}{\setmainfont{Linux Libertine O}}%
+    {\setmainfont{Latin Modern Roman}}}
+\IfFontExistsTF{Libertinus Sans}{\setsansfont{Libertinus Sans}}%
+  {\IfFontExistsTF{Linux Biolinum O}{\setsansfont{Linux Biolinum O}}%
+    {\setsansfont{Latin Modern Sans}}}
+\IfFontExistsTF{DejaVu Sans Mono}{\setmonofont{DejaVu Sans Mono}[Scale=MatchLowercase]}%
+  {\setmonofont{Latin Modern Mono}}
+
+\definecolor{azulnota}{HTML}{1F4E8C}
+\definecolor{verdenota}{HTML}{2E7D4F}
+\definecolor{ambarnota}{HTML}{B7791F}
+\definecolor{cinzanota}{HTML}{555555}
+
+\KOMAoptions{parskip=half-,DIV=calc}
+\addtokomafont{disposition}{\sffamily\color{azulnota}}
+\setkomafont{title}{\sffamily\bfseries\color{azulnota}}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  columns=fullflexible,
+  keepspaces=true,
+  frame=single,
+  rulecolor=\color{black!20},
+  backgroundcolor=\color{black!3},
+  framesep=3mm,
+  keywordstyle=\color{azulnota}\bfseries,
+  commentstyle=\color{cinzanota}\itshape,
+  stringstyle=\color{verdenota},
+  showstringspaces=false
+}
+
+\pagestyle{scrheadings}
+\clearpairofpagestyles
+\ihead{\sffamily\small\@title}
+\ohead{\sffamily\small\thepage}
+
+% Nota de margem (estilo Tufte): #+begin_margem ... #+end_margem -----------
+\NewEnviron{margem}{\marginnote{\footnotesize\color{cinzanota}\BODY}}
+
+% QR code para a versão web, ao fim (só quando \nrurl foi definida) -------
+\newcommand{\nr@rodape}{%
+  \par\bigskip\noindent
+  \begin{minipage}[c]{2.6cm}%
+    \ifdefined\qrcode\qrcode[height=2.2cm]{\nrurl}\fi
+  \end{minipage}\hfill
+  \begin{minipage}[c]{\dimexpr\linewidth-3cm\relax}%
+    \sffamily\small Versão web desta nota:\\
+    \expandafter\url\expandafter{\nrurl}%
+  \end{minipage}\par}
+\AtEndDocument{\ifdefined\nrurl\nr@rodape\fi}
+
+% Caixas ---------------------------------------------------------------
+\newtcolorbox{definicao}[1][]{breakable,colback=azulnota!5,colframe=azulnota,
+  fonttitle=\sffamily\bfseries,title=Definição,#1}
+\newtcolorbox{teorema}[1][]{breakable,colback=verdenota!5,colframe=verdenota,
+  fonttitle=\sffamily\bfseries,title=Teorema,#1}
+\newtcolorbox{exemplo}[1][]{breakable,colback=ambarnota!5,colframe=ambarnota,
+  fonttitle=\sffamily\bfseries,title=Exemplo,#1}
+\newtcolorbox{nota}[1][]{breakable,colback=black!3,colframe=cinzanota,
+  fonttitle=\sffamily\bfseries,title=Nota,#1}
+
+\endinput

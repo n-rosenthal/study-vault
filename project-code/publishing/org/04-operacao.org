@@ -1,0 +1,812 @@
+#+TITLE: Operação: ponto de entrada, testes, CI e build
+#+AUTHOR: Nicolas
+#+LANGUAGE: pt
+#+PROPERTY: header-args:emacs-lisp :mkdirp yes :comments no
+#+PROPERTY: header-args:makefile :mkdirp yes :comments no
+#+PROPERTY: header-args:yaml :mkdirp yes :comments no
+#+PROPERTY: header-args:conf :mkdirp yes :comments no
+#+STARTUP: overview
+
+* Visão geral
+
+| Arquivo                        | Função                                              |
+|--------------------------------+-----------------------------------------------------|
+| =lisp/nr.el=                     | carrega todos os módulos (=(require 'nr)=)            |
+| =scripts/tangle.el=              | tangle de todos os =org/*.org= em lote                |
+| =scripts/build.el=               | ponto de entrada do build (local e CI)              |
+| =scripts/ci-deps.el=             | instala =htmlize= (destaque de código no HTML)        |
+| =test/nr-test.el=                | testes ERT sobre um vault de exemplo gerado na hora |
+| =pagefind.yml=                   | seletores do Pagefind                               |
+| =Makefile=                       | =make tangle=, =test=, =compile=, =build=, =instalar-ci=      |
+| =.github/workflows/publicar.yml= | workflow de deploy                                  |
+
+* Ponto de entrada
+
+#+begin_src emacs-lisp :tangle ../lisp/nr.el
+;;; nr.el --- Pipeline de publicação org → PDF e web -*- lexical-binding: t; -*-
+
+;; Gerado por tangle de org/04-operacao.org. Edite o .org, não este arquivo.
+
+;; Uso no init.el:
+;;   (add-to-list 'load-path "~/org/roam/project-code/internal/publishing/lisp")
+;;   (require 'nr)
+
+;;; Code:
+
+(require 'nr-core)
+(require 'nr-index)
+(require 'nr-export)
+(require 'nr-diario)
+(require 'nr-sinteses)
+(require 'nr-relacionadas)
+(require 'nr-grafo)
+(require 'nr-og)
+(require 'nr-template)
+(require 'nr-site)
+
+(provide 'nr)
+;;; nr.el ends here
+#+end_src
+
+* Scripts
+
+#+begin_src emacs-lisp :tangle ../scripts/tangle.el
+;;; tangle.el --- Tangle de todos os org/*.org  -*- lexical-binding: t; -*-
+;; Uso: emacs -Q --batch -l scripts/tangle.el
+
+(require 'org)
+(require 'ob-tangle)
+
+(let* ((raiz (file-name-directory
+              (directory-file-name (file-name-directory load-file-name))))
+       (org-confirm-babel-evaluate nil))
+  (dolist (arquivo (directory-files (expand-file-name "org" raiz) t "\\`[^.#].*\\.org\\'"))
+    (message "Tangle: %s" (file-name-nondirectory arquivo))
+    (org-babel-tangle-file arquivo)))
+#+end_src
+
+#+begin_src emacs-lisp :tangle ../scripts/build.el
+;;; build.el --- Ponto de entrada do build (local e CI)  -*- lexical-binding: t; -*-
+;; Uso: emacs -Q --batch -l scripts/build.el
+;; Variáveis de ambiente: NR_VAULT, NR_SAIDA, NR_SITE_URL (veja org/01-nucleo.org).
+
+(require 'package)
+(package-initialize)   ; para achar o htmlize instalado, se houver
+
+(let ((raiz (file-name-directory
+             (directory-file-name (file-name-directory load-file-name)))))
+  (add-to-list 'load-path (expand-file-name "lisp" raiz)))
+
+(require 'nr)
+
+(condition-case err
+    (nr/publicar t)
+  (error
+   (message "ERRO NO BUILD: %S" err)
+   (kill-emacs 1)))
+#+end_src
+
+#+begin_src emacs-lisp :tangle ../scripts/ci-deps.el
+;;; ci-deps.el --- Dependências do Emacs no CI  -*- lexical-binding: t; -*-
+;; htmlize é opcional: sem ele o código sai sem destaque de sintaxe.
+
+(require 'package)
+(setq package-archives
+      '(("gnu"    . "https://elpa.gnu.org/packages/")
+        ("nongnu" . "https://elpa.nongnu.org/nongnu/")))
+(package-initialize)
+(unless (package-installed-p 'htmlize)
+  (with-timeout (120 (message "AVISO: tempo esgotado instalando htmlize; código sem destaque"))
+    (condition-case err
+        (progn (package-refresh-contents)
+               (package-install 'htmlize))
+      (error (message "AVISO: htmlize não instalado (%S); código sem destaque" err)))))
+#+end_src
+
+* Configuração do Pagefind
+
+Lido pelo Pagefind quando ele roda a partir da raiz do projeto.
+
+#+begin_src conf :tangle ../pagefind.yml
+root_selector: "#content"
+exclude_selectors:
+  - "#table-of-contents"
+  - "#postamble"
+  - "#search"
+  - "#grafo-local"
+  - ".backlinks"
+force_language: pt
+#+end_src
+
+* Makefile
+
+Usa =.RECIPEPREFIX= (=>=) para não depender de tabulações.
+
+#+begin_src makefile :tangle ../Makefile
+.RECIPEPREFIX := >
+EMACS ?= emacs
+VAULT ?= $(HOME)/org/roam/vault/export
+
+.PHONY: tangle test compile build clean instalar-ci
+
+tangle:
+> $(EMACS) -Q --batch -l scripts/tangle.el
+
+test: tangle
+> $(EMACS) -Q --batch -l test/nr-test.el -f ert-run-tests-batch-and-exit
+
+compile: tangle
+> $(EMACS) -Q --batch -L lisp --eval '(setq byte-compile-error-on-warn t)' -f batch-byte-compile lisp/*.el
+> rm -f lisp/*.elc
+
+build: tangle
+> $(EMACS) -Q --batch -l scripts/build.el
+
+clean:
+> rm -f lisp/*.elc
+
+# Copia o workflow para o repositório do vault (o GitHub só lê .github/ da raiz).
+instalar-ci:
+> mkdir -p $(VAULT)/.github/workflows
+> cp .github/workflows/publicar.yml $(VAULT)/.github/workflows/publicar.yml
+> @echo "Workflow copiado para $(VAULT)/.github/workflows/. Ajuste PUBLISHING_DIR e NR_SITE_URL."
+#+end_src
+
+* Workflow de deploy
+
+Fica em =.github/workflows/publicar.yml= *deste projeto* e é copiado para a
+raiz do repositório do vault com =make instalar-ci= (o GitHub só lê
+=.github/= da raiz do repositório).
+
+Pontos de projeto:
+
+- =fetch-depth: 0=: a data "atualizada em" vem do histórico do git.
+- Roda os *testes* antes do build; se falharem, nada é publicado.
+- =NR_VAULT= aponta para o checkout; =NR_SAIDA= para =_site/= (diretório
+  proibido, então nunca vira nota).
+- Guardas depois do build: diretório =diario/= ausente na saída, =diario= ausente
+  no grafo, arquivos essenciais presentes.
+- *AJUSTAR*: =PUBLISHING_DIR=, =NR_SITE_URL= e =external_repository=.
+
+#+begin_src yaml :tangle ../.github/workflows/publicar.yml
+name: Publicar site
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'diario/**'
+      - 'private/**'
+  workflow_dispatch:
+
+concurrency:
+  group: publicar
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # AJUSTAR: onde este projeto está dentro do vault
+  PUBLISHING_DIR: project-code/internal/publishing
+  # AJUSTAR: URL pública do site
+  NR_SITE_URL: https://n-rosenthal.github.io
+  NR_VAULT: ${{ github.workspace }}
+  NR_SAIDA: ${{ github.workspace }}/_site
+  NR_CACHE: ${{ github.workspace }}/.cache-nr
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do vault (histórico completo)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Instalar Emacs
+        uses: purcell/setup-emacs@v6.0
+        with:
+          version: 30.1
+
+      - name: Instalar Node (Pagefind)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Cache dos pacotes do Emacs
+        uses: actions/cache@v4
+        with:
+          path: ~/.emacs.d/elpa
+          key: elpa-${{ runner.os }}-htmlize-v1
+
+      - name: Dependências do Emacs
+        run: emacs --batch -l "$PUBLISHING_DIR/scripts/ci-deps.el"
+
+      - name: Testes
+        run: make -C "$PUBLISHING_DIR" test
+
+      - name: Build do site
+        run: make -C "$PUBLISHING_DIR" build
+
+      - name: Indexar busca (Pagefind)
+        working-directory: ${{ env.PUBLISHING_DIR }}
+        run: npx -y pagefind@1.3.0 --site "$NR_SAIDA"
+
+      - name: Guardas de privacidade e sanidade
+        run: |
+          test -f _site/index.html
+          test -f _site/feed.xml
+          test -f _site/grafo.json
+          test -d _site/pagefind
+          if find _site -type d -ipath '*/diario' | grep -q .; then
+            echo "ERRO: diretório diario/ apareceu na saída"; exit 1
+          fi
+          if grep -q '"url":"/diario/' _site/grafo.json; then
+            echo "ERRO: diário no grafo"; exit 1
+          fi
+          touch _site/.nojekyll
+
+      - name: Publicar no repositório do site
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          deploy_key: ${{ secrets.DEPLOY_KEY }}
+          # AJUSTAR: repositório público de destino
+          external_repository: SEU-USUARIO/SEU-USUARIO.github.io
+          publish_branch: main
+          publish_dir: ./_site
+#+end_src
+
+* Testes
+
+Os testes montam um vault de exemplo num diretório temporário (notas
+publicáveis, privadas, rascunho, diário, diretório oculto, links entre elas,
+código com links de exemplo) e verificam o comportamento *de ponta a ponta*:
+publicam de verdade com =org-publish=, exportam LaTeX de verdade e leem o
+resultado. Cobrem o que mais pode vazar ou quebrar:
+
+- privacidade: nada de =diario/=, =private/=, rascunhos ou notas com =private=
+  em HTML, índice, grafo, feed, backlinks ou sínteses;
+- links =id:= para notas privadas viram texto, nunca link;
+- blocos de código não geram links nem ids falsos;
+- backlinks, sínteses (ordem, filtros), grafo (nós/arestas sem duplicar), feed
+  (XML válido), diário (intervalo, níveis, aninhamento), classe LaTeX por tipo.
+
+Os testes de PDF (compilação com LuaLaTeX) só rodam se =latexmk=, =lualatex= e
+as fontes estiverem instalados.
+
+#+begin_src emacs-lisp :tangle ../test/nr-test.el
+;;; nr-test.el --- Testes do pipeline  -*- lexical-binding: t; -*-
+;; Uso: emacs -Q --batch -l test/nr-test.el -f ert-run-tests-batch-and-exit
+
+(require 'ert)
+(require 'xml)
+(require 'json)
+
+(let ((raiz (file-name-directory
+             (directory-file-name (file-name-directory load-file-name)))))
+  (add-to-list 'load-path (expand-file-name "lisp" raiz)))
+(require 'nr)
+
+;;;; Fixture
+
+(defun nr-test--escrever (raiz rel linhas)
+  (let ((arq (expand-file-name rel raiz)))
+    (make-directory (file-name-directory arq) t)
+    (with-temp-file arq
+      (set-buffer-file-coding-system 'utf-8-unix)
+      (insert (mapconcat #'identity linhas "\n") "\n"))
+    arq))
+
+(defun nr-test--criar-vault (raiz)
+  "Cria o vault de exemplo em RAIZ."
+  (nr-test--escrever
+   raiz "ml/retropropagacao.org"
+   '(":PROPERTIES:" ":ID:       id-retro" ":END:"
+     "#+TITLE: Retropropagação"
+     "#+DATE: [2026-11-12 Thu 20:44]"
+     "#+DESCRIPTION: Como o gradiente é calculado camada a camada."
+     "#+STATUS: growing"
+     "#+FILETAGS: :ml:study:publish:"
+     ""
+     "* Ideia"
+     "Usa o [[id:id-grad][Gradiente]] e a regra da cadeia. Ação e coração."
+     ""
+     "#+begin_definicao"
+     "Uma definição qualquer."
+     "#+end_definicao"
+     ""
+     "#+begin_margem"
+     "Nota de margem sobre a regra da cadeia."
+     "#+end_margem"
+     ""
+     "Exemplo de código (o link abaixo é só texto):"
+     ""
+     "#+begin_src emacs-lisp"
+     ";; veja [[id:xxxx][exemplo]] e :ID: fake"
+     "(+ 1 2)"
+     "#+end_src"))
+  (nr-test--escrever
+   raiz "ml/gradiente.org"
+   '(":PROPERTIES:" ":ID:       id-grad" ":END:"
+     "#+TITLE: Gradiente"
+     "#+DATE: 2026-11-10"
+     "#+DESCRIPTION: Derivadas parciais em vetor."
+     "#+STATUS: madura"
+     "#+FILETAGS: :ml:study:publish:"
+     ""
+     "* Definição"
+     "Base da [[id:id-retro][Retropropagação]]."))
+  (nr-test--escrever
+   raiz "ml/sintese-ml.org"
+   '(":PROPERTIES:" ":ID:       id-sint" ":END:"
+     "#+TITLE: Síntese: Aprendizado de Máquina"
+     "#+DATE: 2026-11-13"
+     "#+NOTE_TYPE: synthesis"
+     "#+FILETAGS: :ml:synthesis:publish:"
+     ""
+     "* Notas de estudo"
+     "#+BEGIN: notas-por-tag :tag \"ml\" :tipo \"study\" :resumo t"
+     "#+END:"))
+  (nr-test--escrever
+   raiz "ml/rascunho.org"
+   '(":PROPERTIES:" ":ID:       id-rasc" ":END:"
+     "#+TITLE: Rascunho secreto" "#+FILETAGS: :ml:study:"
+     "* Texto" "Ainda não está pronto."))
+  (nr-test--escrever
+   raiz "ml/privada.org"
+   '(":PROPERTIES:" ":ID:       id-privada" ":END:"
+     "#+TITLE: Nota privada" "#+FILETAGS: :ml:study:publish:private:"
+     "* Texto" "Não pode sair."))
+  (nr-test--escrever
+   raiz "private/segredo.org"
+   '(":PROPERTIES:" ":ID:       id-segredo" ":END:"
+     "#+TITLE: Segredo de família" "#+FILETAGS: :ml:study:publish:"
+     "* Texto" "Esta nota tem a tag mas está em private/."))
+  (nr-test--escrever
+   raiz ".oculto/x.org"
+   '("#+TITLE: Oculto" "#+FILETAGS: :publish:" "* Texto"))
+  (nr-test--escrever
+   raiz "journal/2026-11.org"
+   '("#+TITLE: Diário de novembro"
+     "* Dia 09"
+     ":PROPERTIES:" ":CREATED: [2026-11-09 Mon 21:00]" ":END:"
+     "Antes do intervalo."
+     "* Dia 10"
+     ":PROPERTIES:" ":CREATED: [2026-11-10 Tue 21:00]" ":END:"
+     "Entrada do dia 10."
+     "** Detalhe do dia 10"
+     "Sub-heading que não deve duplicar."
+     "* Dia 12"
+     ":PROPERTIES:" ":CREATED: [2026-11-12 Thu 08:00]" ":END:"
+     "Entrada do dia 12, ação e coração."
+     "* Dia 11"
+     ":PROPERTIES:" ":CREATED: [2026-11-11 Wed 19:00]" ":END:"
+     "Entrada do dia 11 (fora de ordem no arquivo)."
+     "* Dia 14"
+     ":PROPERTIES:" ":CREATED: [2026-11-14 Sat 19:00]" ":END:"
+     "Depois do intervalo.")))
+
+(defmacro nr-test--com-vault (&rest corpo)
+  "Executa CORPO com um vault de exemplo e diretórios temporários."
+  (declare (indent 0))
+  `(let* ((base (make-temp-file "nr-test-" t))
+          (nr/vault (file-name-as-directory (expand-file-name "vault" base)))
+          (nr/saida (file-name-as-directory (expand-file-name "site" base)))
+          (nr/exports (file-name-as-directory (expand-file-name "exports" base)))
+          (nr/cache (file-name-as-directory (expand-file-name "cache" base)))
+          (nr/diario-dir (expand-file-name "journal/" nr/vault))
+          (nr/site-url "https://x.test")
+          (nr/indice nil) (nr/indice--por-id nil) (nr/indice--backlinks nil)
+          (org-publish-cache nil)   ; o ox-publish guarda o cache em variável global
+          (process-environment (cons "CI=" process-environment)))
+     (unwind-protect
+         (progn (nr-test--criar-vault nr/vault)
+                (cl-letf (((symbol-function 'nr/indexar-busca) #'ignore))
+                  ,@corpo))
+       (delete-directory base t))))
+
+(defun nr-test--ler (arquivo)
+  (with-temp-buffer
+    (let ((coding-system-for-read 'utf-8)) (insert-file-contents arquivo))
+    (buffer-string)))
+
+(defun nr-test--site (rel) (nr-test--ler (expand-file-name rel nr/saida)))
+
+(defun nr-test--titulos (notas) (mapcar #'nr/nota-titulo notas))
+
+;;;; Índice e privacidade
+
+(ert-deftest nr-test-indice-publicaveis ()
+  (nr-test--com-vault
+    (nr/indice-construir)
+    (should (equal (sort (nr-test--titulos (nr/notas t)) #'string<)
+                   '("Gradiente" "Retropropagação" "Síntese: Aprendizado de Máquina")))
+    (should-not (nr/nota-publicavel (nr/nota-por-id "id-rasc")))
+    (should-not (nr/nota-publicavel (nr/nota-por-id "id-privada")))
+    (should-not (nr/nota-publicavel (nr/nota-por-id "id-segredo")))
+    (should-not (seq-some (lambda (n) (string-prefix-p ".oculto" (nr/nota-rel n))) (nr/notas)))))
+
+(ert-deftest nr-test-indice-ignora-blocos-de-codigo ()
+  (nr-test--com-vault
+    (nr/indice-construir)
+    (let ((retro (nr/nota-por-id "id-retro")))
+      (should (equal (nr/nota-links-id retro) '("id-grad")))
+      (should (equal (nr/nota-ids retro) '("id-retro")))
+      (should-not (nr/nota-por-id "fake")))))
+
+(ert-deftest nr-test-metadados ()
+  (nr-test--com-vault
+    (nr/indice-construir)
+    (let ((retro (nr/nota-por-id "id-retro")))
+      (should (equal (nr/nota-data retro) "2026-11-12"))
+      (should (equal (nr/nota-status retro) "growing"))
+      (should (equal (nr/nota-tipo retro) "study"))
+      (should (equal (nr/tags-visiveis retro) '("ml" "study")))
+      (should (equal (nr/url retro) "/ml/retropropagacao.html")))
+    (should (equal (nr/nota-tipo (nr/nota-por-id "id-sint")) "synthesis"))))
+
+(ert-deftest nr-test-backlinks ()
+  (nr-test--com-vault
+    (nr/indice-construir)
+    (should (equal (nr-test--titulos (nr/backlinks (nr/nota-por-id "id-retro"))) '("Gradiente")))
+    (should (equal (nr-test--titulos (nr/backlinks (nr/nota-por-id "id-grad"))) '("Retropropagação")))))
+
+(ert-deftest nr-test-vault-em-caminho-com-nome-proibido ()
+  "Um vault dentro de ~/project-code/... não pode excluir tudo."
+  (let* ((base (make-temp-file "nr-test-" t))
+         (nr/vault (file-name-as-directory (expand-file-name "project-code/vault" base)))
+         (nr/indice nil) (nr/indice--por-id nil) (nr/indice--backlinks nil))
+    (unwind-protect
+        (progn (nr-test--criar-vault nr/vault)
+               (nr/indice-construir)
+               (should (= 3 (length (nr/notas t))))
+               (should (nr/diretorio-proibido-p (expand-file-name "private/segredo.org" nr/vault)))
+               (should-not (nr/diretorio-proibido-p (expand-file-name "ml/gradiente.org" nr/vault)))
+               ;; o ox-publish compara o :exclude com caminhos relativos ao vault
+               (should (string-match-p (nr/regexp-diretorios-proibidos) "private/segredo.org"))
+               (should (string-match-p (nr/regexp-diretorios-proibidos) "a/b/journal/x.org"))
+               (should (string-match-p (nr/regexp-diretorios-proibidos) ".oculto/x.org"))
+               (should-not (string-match-p (nr/regexp-diretorios-proibidos) "ml/gradiente.org"))
+               (should-not (string-match-p (nr/regexp-diretorios-proibidos) "ml/meu-private/x.org"))
+               (should (string-match-p (nr/regexp-exclusao) "ml/rascunho.org"))
+               (should-not (string-match-p (nr/regexp-exclusao) "ml/gradiente.org")))
+      (delete-directory base t))))
+
+;;;; Verificador de links
+
+(ert-deftest nr-test-links-ok ()
+  (nr-test--com-vault
+    (nr/indice-construir)
+    (should-not (nr/links-problemas))))
+
+(ert-deftest nr-test-links-problemas ()
+  (nr-test--com-vault
+    (nr-test--escrever
+     nr/vault "ml/ruim.org"
+     '(":PROPERTIES:" ":ID: id-ruim" ":END:"
+       "#+TITLE: Ruim" "#+FILETAGS: :ml:study:publish:"
+       "* Links"
+       "Para [[id:id-segredo][o segredo]], [[id:nao-existe][nada]],"
+       "[[file:../private/segredo.org][arquivo privado]], [[file:falta.png]] e"
+       "[[id:id-grad][um bom]]."))
+    (nr/indice-construir)
+    (let ((p (nr/links-problemas)))
+      (should (= 4 (length p)))
+      (should (seq-some (lambda (s) (string-match-p "não publicada.*Segredo" s)) p))
+      (should (seq-some (lambda (s) (string-match-p "id desconhecido (nao-existe)" s)) p))
+      (should (seq-some (lambda (s) (string-match-p "arquivo não publicado" s)) p))
+      (should (seq-some (lambda (s) (string-match-p "arquivo inexistente (falta.png)" s)) p)))
+    (should-error (nr/verificar-links))))
+
+;;;; Blocos dinâmicos
+
+(ert-deftest nr-test-dblock ()
+  (nr-test--com-vault
+    (should (= 1 (nr/atualizar-dblocks)))
+    (let ((s (nr-test--ler (expand-file-name "ml/sintese-ml.org" nr/vault))))
+      (should (string-match-p "\\[\\[id:id-retro\\]\\[Retropropagação\\]\\] — 2026-11-12 · crescendo" s))
+      (should (string-match-p "\\[\\[id:id-grad\\]\\[Gradiente\\]\\] — 2026-11-10 · madura" s))
+      (should (string-match-p "Como o gradiente é calculado" s))      ; :resumo t
+      (should (< (string-match "Retropropagação\\]\\]" s) (string-match "Gradiente\\]\\]" s)))
+      (should-not (string-match-p "Rascunho\\|Nota privada\\|Segredo" s)))
+    ;; idempotente
+    (should (= 0 (nr/atualizar-dblocks)))))
+
+;;;; Publicação de ponta a ponta
+
+(ert-deftest nr-test-publicacao-completa ()
+  (nr-test--com-vault
+    (nr/atualizar-dblocks)
+    (nr/publicar t)
+    ;; arquivos essenciais
+    (dolist (f '("index.html" "feed.xml" "grafo.json" "grafo.html" "css/site.css"
+                 "css/estudo.css" "css/sintese.css" "js/grafo-local.js"
+                 "ml/retropropagacao.html" "ml/gradiente.html" "ml/sintese-ml.html"))
+      (should (file-exists-p (expand-file-name f nr/saida))))
+    ;; privacidade
+    (dolist (f '("ml/rascunho.html" "ml/privada.html" "private" "diario" ".oculto"))
+      (should-not (file-exists-p (expand-file-name f nr/saida))))
+    (let ((todo (mapconcat #'nr-test--ler
+                           (directory-files-recursively nr/saida "\\.\\(html\\|json\\|xml\\)\\'")
+                           "\n")))
+      (dolist (proibido '("Rascunho secreto" "Nota privada" "Segredo de família"
+                          "Diário de novembro" "Entrada do dia"))
+        (should-not (string-search proibido todo))))
+    ;; nota de estudo
+    (let ((h (nr-test--site "ml/retropropagacao.html")))
+      (should (string-search "selo-crescendo" h))
+      (should (string-search "min de leitura" h))
+      (should (string-search "criada em 2026-11-12" h))
+      (should (string-search "atualizada em" h))
+      (should (string-search "data-pagefind-filter=\"tipo[data-v]\" data-v=\"estudo\"" h))
+      (should (string-search "data-pagefind-filter=\"tag[data-v]\" data-v=\"ml\"" h))
+      (should (string-search "data-pagefind-filter=\"status[data-v]\" data-v=\"crescendo\"" h))
+      (should (string-search "og:title\" content=\"Retropropagação\"" h))
+      (should (string-search "og:description" h))
+      (should (string-search "href=\"/css/estudo.css\"" h))
+      (should (string-search "href=\"/css/site.css\"" h))
+      (should (string-search "/js/grafo-local.js" h))
+      (should (string-search "href=\"/ml/gradiente.html\"" h))     ; id: → página
+      (should (string-search "class=\"definicao\"" h))
+      (should (string-search "class=\"margem\"" h))
+      (should (string-search "og:url\" content=\"https://x.test/ml/retropropagacao.html\"" h))
+      (when nr/og-imagens
+        (should (string-search "og:image\" content=\"https://x.test/og/ml/retropropagacao.png\"" h))
+        (should (file-exists-p (expand-file-name "og/ml/retropropagacao.png" nr/saida)))
+        (should-not (file-exists-p (expand-file-name "og/ml/rascunho.png" nr/saida)))
+        (should-not (file-exists-p (expand-file-name "og/private" nr/saida))))
+      (should (string-search "id:xxxx" h))                          ; código intacto
+      (should (string-search "Citada em" h))
+      (should (string-search "<html lang=\"pt-BR\"" h))
+      (should (string-search "<h2>&Iacute;ndice</h2>" h))          ; dicionário pt_BR
+      (should-not (string-search "file:///" h)))
+    ;; backlinks
+    (let ((h (nr-test--site "ml/gradiente.html")))
+      (should (string-search "<ul class=\"backlinks\">" h))
+      (should (string-search "<a href=\"/ml/retropropagacao.html\">Retropropagação</a>" h)))
+    ;; síntese
+    (let ((h (nr-test--site "ml/sintese-ml.html")))
+      (should (string-search "href=\"/css/sintese.css\"" h))
+      (should (string-search "/ml/retropropagacao.html" h))
+      (should (string-search "/ml/gradiente.html" h)))
+    ;; índice
+    (let ((h (nr-test--site "index.html")))
+      (should (string-search "Estudos" h))
+      (should (string-search "Sínteses" h))
+      (should (string-search "id=\"search\"" h))
+      (should (string-search "data-pagefind-ignore" h))
+      (should (< (string-search "ml/retropropagacao.html" h)
+                 (string-search "ml/gradiente.html" h))))      ; data decrescente
+    ;; grafo
+    (let* ((g (json-parse-string (nr-test--site "grafo.json") :object-type 'alist :array-type 'list))
+           (nos (alist-get 'nodes g)) (arestas (alist-get 'links g)))
+      (should (= 3 (length nos)))
+      (should (= 3 (length arestas)))     ; retro–grad, sintese→retro, sintese→grad
+      (should (equal (alist-get 'url (car nos)) "/ml/gradiente.html")))
+    ;; feed
+    (let* ((xml (xml-parse-file (expand-file-name "feed.xml" nr/saida)))
+           (entradas (xml-get-children (car xml) 'entry)))
+      (should (= 3 (length entradas)))
+      (should (string-search "https://x.test/ml/gradiente.html"
+                             (nr-test--site "feed.xml"))))))
+
+(ert-deftest nr-test-link-para-nota-privada-vira-texto ()
+  (nr-test--com-vault
+    (nr-test--escrever
+     nr/vault "ml/vaza.org"
+     '(":PROPERTIES:" ":ID: id-vaza" ":END:"
+       "#+TITLE: Vaza" "#+FILETAGS: :ml:estudo:publish:"
+       "* Texto" "Veja [[id:id-segredo][o segredo]] e [[id:id-grad]]."))
+    (nr/indice-construir)
+    (nr/projetos-definir)
+    (let ((org-publish-timestamp-directory (expand-file-name "timestamps/" nr/cache)))
+      (org-publish "estudos" t))
+    (let ((h (nr-test--site "ml/vaza.html")))
+      (should (string-search "o segredo" h))
+      (should-not (string-search "private/segredo" h))
+      (should-not (string-search "id-segredo" h))
+      (should (string-search "href=\"/ml/gradiente.html\">Gradiente</a>" h)))))
+
+;;;; LaTeX
+
+(defun nr-test--latex (arquivo)
+  (with-current-buffer (find-file-noselect arquivo)
+    (prog1 (org-export-as 'latex nil nil nil)
+      (set-buffer-modified-p nil)
+      (kill-buffer))))
+
+(ert-deftest nr-test-latex-por-tipo ()
+  (nr-test--com-vault
+    (nr/indice-construir)
+    (let ((tex (nr-test--latex (expand-file-name "ml/retropropagacao.org" nr/vault))))
+      (should (string-search "\\documentclass[11pt,a4paper]{scrartcl}" tex))
+      (should (string-search "\\usepackage{estudo}" tex))
+      (should (string-search "\\begin{definicao}" tex))
+      (should (string-search "\\begin{margem}" tex))
+      (should (string-search "\\gdef\\nrurl{https://x.test/ml/retropropagacao.html}" tex))
+      (should (string-search "\\date{2026-11-12}" tex))
+      (should (string-search "\\author{Nicolas}" tex))
+      (should (string-search "\\href{https://x.test/ml/gradiente.html}{Gradiente}" tex))
+      (should-not (string-search "[2026-11-12" tex)))
+    (let ((tex (nr-test--latex (expand-file-name "ml/rascunho.org" nr/vault))))   ; privada
+      (should-not (string-search "nrurl" tex)))
+    (should (string-search "\\usepackage{sintese}"
+                           (nr-test--latex (expand-file-name "ml/sintese-ml.org" nr/vault))))))
+
+(ert-deftest nr-test-latex-link-privado-vira-texto ()
+  (nr-test--com-vault
+    (nr-test--escrever
+     nr/vault "ml/vaza.org"
+     '(":PROPERTIES:" ":ID: id-vaza" ":END:" "#+TITLE: Vaza"
+       "* Texto" "Veja [[id:id-segredo][o segredo]]."))
+    (nr/indice-construir)
+    (let ((tex (nr-test--latex (expand-file-name "ml/vaza.org" nr/vault))))
+      (should (string-search "o segredo" tex))
+      (should-not (string-search "\\href" tex)))))
+
+;;;; Diário
+
+(ert-deftest nr-test-diario-coletar ()
+  (nr-test--com-vault
+    (let ((e (nr/diario-coletar "2026-11-10" "2026-11-12")))
+      (should (= 3 (length e)))
+      (should (string-search "Entrada do dia 10" (cdr (nth 0 e))))
+      (should (string-search "Entrada do dia 11" (cdr (nth 1 e))))     ; ordem cronológica
+      (should (string-search "Entrada do dia 12" (cdr (nth 2 e))))
+      (should (string-search "Detalhe do dia 10" (cdr (nth 0 e))))     ; sub-heading incluído
+      (should (= 1 (cl-count-if (lambda (x) (string-search "Detalhe do dia 10" (cdr x))) e))))
+    (should-not (nr/diario-coletar "2027-01-01" "2027-01-31"))))
+
+(ert-deftest nr-test-diario-niveis ()
+  (should (equal (nr/diario-normalizar-nivel "*** T\n**** S\ntexto") "* T\n** S\ntexto"))
+  (should (equal (nr/diario-normalizar-nivel "* T\n** S") "* T\n** S")))
+
+(ert-deftest nr-test-diario-tex ()
+  (nr-test--com-vault
+    (let* ((tex-arq (nr/exportar-diario "2026-11-10" "2026-11-12" t))
+           (tex (nr-test--ler tex-arq)))
+      (should (string-prefix-p nr/exports tex-arq))
+      (should (string-search "\\usepackage{diario}" tex))
+      (should-not (string-search "nrurl" tex))
+      (should (string-search "Entrada do dia 10" tex))
+      (should-not (string-search "Antes do intervalo" tex)))
+    (should-error (nr/exportar-diario "2027-01-01" "2027-01-02" t) :type 'user-error)))
+
+;;;; Utilidades
+
+(ert-deftest nr-test-utilidades ()
+  (should (equal (nr/escapar-html "a<b & \"c\"") "a&lt;b &amp; &quot;c&quot;"))
+  (should (equal (nr/data-curta "[2026-11-12 Thu 20:44]") "2026-11-12"))
+  (should-not (nr/data-curta "sem data"))
+  (should (equal (nr/--tags ":ml:estudo:publish:") '("ml" "estudo" "publish"))))
+
+;;;; Modelos de nota
+
+(ert-deftest nr-test-cabecalho-e-nova-nota ()
+  (nr-test--com-vault
+    (let* ((arq (nr/criar-nota "estudo" "Retropropagação & Cia" :tags '("ml")))
+           (n (nr/nota-ler arq)))
+      (should (string-suffix-p "estudos/retropropagacao-cia.org" arq))
+      (should (equal (nr/nota-titulo n) "Retropropagação & Cia"))
+      (should (equal (nr/nota-tipo n) "estudo"))
+      (should (equal (nr/nota-tags n) '("ml" "estudo")))
+      (should (equal (nr/nota-status n) "semente"))
+      (should (nr/nota-id n))
+      (should-not (nr/nota-publicavel n))            ; privada por padrão
+      (should-error (nr/criar-nota "estudo" "Retropropagação & Cia") :type 'user-error))
+    (let ((n (nr/nota-ler (nr/criar-nota "sintese" "Visão computacional"
+                                         :tags '("cv") :publicar t))))
+      (should (nr/nota-publicavel n))
+      (should (equal (nr/nota-tipo n) "sintese")))
+    (should (string-search "#+BEGIN: notas-por-tag :tag \"cv\""
+                           (nr-test--ler (expand-file-name "sinteses/visao-computacional.org"
+                                                           nr/vault))))
+    (should-error (nr/cabecalho "inexistente" "x"))
+    (should (equal (nr/--slug "Ação & Coração — parte 2") "acao-coracao-parte-2"))))
+
+;;;; Comandos de nota de diário e estudo
+
+(ert-deftest nr-test-nova-nota-diario ()
+  (nr-test--com-vault
+    (let ((arq (expand-file-name "2026-12-01.org" nr/diario-dir)))
+      (save-window-excursion
+        (nr/nova-nota-diario "2026-12-01" "Primeira")
+        (should (file-exists-p arq))
+        (kill-buffer (current-buffer))
+        (nr/nova-nota-diario "2026-12-01")            ; mesmo dia: acrescenta
+        (kill-buffer (current-buffer)))
+      (let ((s (nr-test--ler arq)))
+        (should (string-search "#+NOTE_TYPE: diario" s))
+        (should-not (string-search "publish" s))
+        (should (string-search "— Primeira" s))
+        (should (= 2 (cl-count ?* (replace-regexp-in-string "[^*\n]" "" s))))
+        (should (= 2 (length (nr/diario-coletar "2026-12-01" "2026-12-01"))))))
+    (let ((c (car (nr/capture-templates))))
+      (should (equal (car c) "d")))
+    (should (keymapp nr/mapa-nova))))
+
+;;;; Notas relacionadas
+
+(ert-deftest nr-test-relacionadas ()
+  (nr-test--com-vault
+    (nr-test--escrever
+     nr/vault "ml/cadeia.org"
+     '(":PROPERTIES:" ":ID: id-cadeia" ":END:" "#+TITLE: Regra da cadeia"
+       "#+DATE: 2026-11-01" "#+FILETAGS: :ml:calculo:estudo:publish:" "* T" "Texto."))
+    (nr-test--escrever
+     nr/vault "ia/solta.org"
+     '(":PROPERTIES:" ":ID: id-solta" ":END:" "#+TITLE: Solta"
+       "#+FILETAGS: :ia:estudo:publish:" "* T" "Texto."))
+    (nr-test--escrever
+     nr/vault "ml/sonda.org"
+     '(":PROPERTIES:" ":ID: id-sonda" ":END:" "#+TITLE: Sonda"
+       "#+FILETAGS: :ml:estudo:publish:" "* Relacionadas"
+       "#+BEGIN: notas-relacionadas :limite 5" "#+END:"))
+    (nr/indice-construir)
+    (let ((retro (nr/nota-por-id "id-retro")) (grad (nr/nota-por-id "id-grad")))
+      ;; tag em comum (2) + link direto (3)
+      (should (equal (plist-get (nr/afinidade retro grad) :pontos) 5))
+      (should (equal (plist-get (nr/afinidade retro grad) :tags) '("ml"))))
+    (nr/atualizar-dblocks)
+    (let ((s (nr-test--ler (expand-file-name "ml/sonda.org" nr/vault))))
+      (dolist (esperado '("Gradiente" "Regra da cadeia" "Retropropagação"))
+        (should (string-search esperado s)))
+      (should (string-search "(em comum: ml)" s))
+      (should-not (string-search "Solta" s))
+      (should-not (string-search "Rascunho" s))          ; não publicável
+      (should-not (string-search "Sonda]]" s))            ; não lista a si mesma
+      (should (< (string-search "Gradiente" s) (string-search "Regra da cadeia" s))))))
+
+;;;; Imagens og:image
+
+(ert-deftest nr-test-og-quebra-linhas ()
+  (should (equal (nr/--quebrar-linhas "um dois tres quatro cinco" 10 3)
+                 '("um dois" "tres" "quatro…")))
+  (should (equal (nr/--quebrar-linhas "curto" 24 3) '("curto"))))
+
+(ert-deftest nr-test-og-gera-png ()
+  (skip-unless (nr/--conversor-svg))
+  (nr-test--com-vault
+    (nr/indice-construir)
+    (let ((retro (nr/nota-por-id "id-retro")))
+      (should (string-search "Retropropagação" (nr/og-svg retro)))
+      (should (string-search "CRESCENDO" (nr/og-svg retro)))
+      (should (equal (nr/og-caminho retro) "/og/ml/retropropagacao.png")))
+    (should (= 3 (nr/gerar-og)))
+    (with-temp-buffer
+      (set-buffer-multibyte nil)
+      (insert-file-contents-literally (expand-file-name "og/ml/retropropagacao.png" nr/saida) nil 0 4)
+      (should (equal (buffer-string) "\211PNG")))))
+
+;;;; PDF (só com LaTeX instalado)
+
+(ert-deftest nr-test-pdf-compila ()
+  (skip-unless (and (executable-find "latexmk") (executable-find "lualatex")
+                    (seq-every-p
+                     (lambda (f)
+                       (with-temp-buffer
+                         (and (zerop (call-process "kpsewhich" nil t nil f))
+                              (> (buffer-size) 1))))
+                     '("scrartcl.cls" "tcolorbox.sty" "listings.sty" "csquotes.sty"
+                       "scrlayer-scrpage.sty" "luaotfload-main.lua" "brazilian.ldf"))))
+  (nr-test--com-vault
+    (nr/indice-construir)
+    (dolist (rel '("ml/retropropagacao.org" "ml/sintese-ml.org"))
+      (let ((pdf (with-current-buffer (find-file-noselect (expand-file-name rel nr/vault))
+                   (prog1 (org-latex-export-to-pdf)
+                     (set-buffer-modified-p nil) (kill-buffer)))))
+        (should (and pdf (file-exists-p pdf)))
+        (when (and (equal rel "ml/retropropagacao.org") (executable-find "pdftotext"))
+          (let ((texto (with-temp-buffer
+                         (call-process "pdftotext" nil t nil (expand-file-name pdf) "-")
+                         (buffer-string))))
+            (should (string-search "Nota de margem sobre a regra da cadeia"
+                                   (replace-regexp-in-string "[ \n]+" " " texto)))
+            (should (string-search "Versão web desta nota" texto))
+            (should (string-search "retropropagacao.html" texto))))))
+    (let ((pdf (nr/exportar-diario "2026-11-10" "2026-11-12")))
+      (should (file-exists-p pdf)))))
+
+;;; nr-test.el ends here
+#+end_src

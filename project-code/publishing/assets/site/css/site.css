@@ -1,0 +1,113 @@
+:root {
+  --fundo: #fdfdfc; --texto: #222; --suave: #666;
+  --destaque: #1f4e8c; --borda: #e2e2e0; --codigo: #f4f4f2;
+  --c-estudo: var(--destaque); --c-sintese: #2e7d4f; --c-outro: var(--suave);
+  --semente: #b7791f; --madura: #2e7d4f;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fundo: #17181a; --texto: #e6e6e3; --suave: #9a9a96;
+    --destaque: #7fb0ea; --borda: #34363a; --codigo: #202225;
+    --c-sintese: #6fcf97; --semente: #e0b05a; --madura: #6fcf97;
+  }
+}
+
+html { font-size: 18px; }
+body {
+  background: var(--fundo); color: var(--texto);
+  font-family: "Libertinus Serif", Georgia, serif;
+  line-height: 1.65; margin: 0 auto; padding: 2rem 1.2rem; max-width: 46rem;
+}
+h1, h2, h3, h4 { font-family: system-ui, sans-serif; color: var(--destaque); line-height: 1.25; }
+a { color: var(--destaque); }
+img { max-width: 100%; height: auto; }
+.title { margin-bottom: 0.2rem; }
+.subtitle { color: var(--suave); margin-top: 0; }
+
+/* Código */
+pre, code { background: var(--codigo); font-size: 0.85em; }
+pre { padding: 0.8rem 1rem; overflow-x: auto; border-radius: 6px; border: 1px solid var(--borda); }
+code { padding: 0.1em 0.3em; border-radius: 3px; }
+pre code { background: none; padding: 0; }
+.org-comment, .org-comment-delimiter, .org-doc { color: var(--suave); font-style: italic; }
+.org-keyword, .org-builtin, .org-preprocessor { color: var(--destaque); font-weight: 600; }
+.org-string { color: var(--madura); }
+.org-function-name, .org-type { color: #8a4fbf; }
+.org-variable-name, .org-constant { color: var(--semente); }
+
+/* Tabelas e sumário */
+table { border-collapse: collapse; margin: 1rem 0; }
+th, td { border-bottom: 1px solid var(--borda); padding: 0.35rem 0.7rem; }
+#table-of-contents { border: 1px solid var(--borda); border-radius: 6px; padding: 0.5rem 1rem; }
+#table-of-contents h2 { font-size: 1rem; margin: 0.3rem 0; }
+
+/* Caixas (blocos especiais do Org) */
+.definicao, .teorema, .exemplo, .nota {
+  border-left: 4px solid var(--destaque); background: var(--codigo);
+  padding: 0.6rem 1rem; margin: 1rem 0; border-radius: 0 6px 6px 0;
+}
+.definicao::before { content: "Definição"; font: 600 0.8rem system-ui; color: var(--destaque); }
+.teorema::before   { content: "Teorema";   font: 600 0.8rem system-ui; color: var(--destaque); }
+.exemplo::before   { content: "Exemplo";   font: 600 0.8rem system-ui; color: var(--destaque); }
+.nota::before      { content: "Nota";      font: 600 0.8rem system-ui; color: var(--destaque); }
+
+/* Nota de margem (no PDF vai para a margem; na web, um aparte) */
+.margem {
+  font-size: 0.85rem; color: var(--suave); margin: 0.8rem 0;
+  border-left: 2px solid var(--borda); padding-left: 0.8rem;
+}
+
+/* Navegação e metadados */
+.nav { display: flex; gap: 1.2rem; font: 0.9rem system-ui, sans-serif; margin-bottom: 1.5rem; }
+.nav a { text-decoration: none; }
+.nav a:hover { text-decoration: underline; }
+.meta-nota {
+  display: flex; flex-wrap: wrap; gap: 0.3rem 1rem;
+  font: 0.8rem system-ui, sans-serif; color: var(--suave); margin: 0 0 1.2rem;
+}
+.selo { padding: 0.05rem 0.6rem; border-radius: 999px; border: 1px solid currentColor; font-weight: 600; }
+.selo-semente   { color: var(--semente); }
+.selo-crescendo { color: var(--destaque); }
+.selo-madura    { color: var(--madura); }
+.selo-outro     { color: var(--suave); }
+.backlinks { padding-left: 1.2rem; }
+.pf-meta { display: none; }
+#postamble { color: var(--suave); font-size: 0.8rem; margin-top: 3rem; }
+
+/* Busca (Pagefind) */
+#search {
+  --pagefind-ui-primary: var(--destaque);
+  --pagefind-ui-text: var(--texto);
+  --pagefind-ui-background: var(--fundo);
+  --pagefind-ui-border: var(--borda);
+  --pagefind-ui-tag: var(--codigo);
+  --pagefind-ui-font: system-ui, sans-serif;
+  margin: 1rem 0 2rem;
+}
+
+/* Grafo global e local */
+.grafo-controles { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; margin: 0.8rem 0; }
+.grafo-controles input {
+  font: inherit; padding: 0.35rem 0.6rem; border: 1px solid var(--borda);
+  border-radius: 6px; background: var(--fundo); color: var(--texto);
+}
+.chave { font: 0.8rem system-ui, sans-serif; margin-right: 0.8rem; }
+.chave::before { content: "●"; margin-right: 0.3rem; color: var(--c-outro); }
+.chave.tipo-estudo::before  { color: var(--c-estudo); }
+.chave.tipo-sintese::before { color: var(--c-sintese); }
+#grafo, #grafo-local svg {
+  width: 100%; border: 1px solid var(--borda); border-radius: 8px; background: var(--codigo);
+}
+#grafo { height: 70vh; cursor: grab; }
+#grafo-local { margin-top: 3rem; }
+#grafo-local svg { height: 260px; }
+#grafo line, #grafo-local line { stroke: var(--suave); stroke-opacity: 0.4; }
+#grafo line.esmaecida { stroke-opacity: 0.05; }
+.no circle { fill: var(--c-outro); stroke: var(--fundo); stroke-width: 1.5; cursor: pointer; }
+.no.tipo-estudo circle  { fill: var(--c-estudo); }
+.no.tipo-sintese circle { fill: var(--c-sintese); }
+.no text { font: 11px system-ui, sans-serif; fill: var(--texto); opacity: 0; pointer-events: none; }
+.no.rotulo text, .no.ativo text, .no:hover text, #grafo-local .no text { opacity: 1; }
+.no.esmaecido { opacity: 0.15; }
+.no.fora { opacity: 0.08; }
+#grafo-local .no.atual circle { stroke: var(--texto); stroke-width: 2.5; }

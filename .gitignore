@@ -1,0 +1,9 @@
+_site/
+.cache-nr/
+/index.org
+*.elc
+*~
+\#*#
+.#*
+DEPLOY_KEY*
+*.pdf

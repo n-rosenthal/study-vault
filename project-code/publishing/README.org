@@ -1,0 +1,220 @@
+#+TITLE: Publicação org-mode → PDF e web
+#+SUBTITLE: Base consolidada do pipeline de estudos
+#+AUTHOR: Nicolas
+#+LANGUAGE: pt_BR
+#+STARTUP: overview
+
+* O que é
+Um pipeline único, em Emacs Lisp literate, que transforma o vault de notas em:
+
+- *PDFs* bonitos de notas de *estudo*, *sínteses* e *diário* (LuaLaTeX);
+- um *site estático* com notas de estudo e sínteses: busca (Pagefind),
+  backlinks, grafo global e local, selo de maturidade, feed Atom, modo escuro;
+- *deploy automático* via GitHub Actions, com testes e guardas de privacidade.
+
+  
+* Estrutura
+#+begin_example
+publishing/
+├── README.org              este arquivo
+├── org/                    FONTE (edite aqui; o resto é gerado por tangle)
+│   ├── 01-nucleo.org       configuração, privacidade, índice do vault
+│   ├── 02-export.org       export por tipo, estilos LaTeX, diário
+│   ├── 03-site.org         sínteses, grafo, ox-publish, feed, CSS/JS
+│   ├── 04-operacao.org     testes, CI, Makefile, scripts
+│   └── 05-extras.org       modelos de nota, notas relacionadas, og:image
+├── lisp/                   nr-core, nr-index, nr-export, nr-diario,
+│                           nr-sinteses, nr-grafo, nr-site, nr-template,
+│                           nr-relacionadas, nr-og, nr          (gerados)
+├── assets/latex/           estudo.sty, sintese.sty, diario.sty    (gerados)
+├── assets/site/            css/, js/, grafo.html                  (gerados)
+├── test/nr-test.el         22 testes ERT                          (gerado)
+├── scripts/ Makefile pagefind.yml .github/workflows/publicar.yml  (gerados)
+#+end_example
+
+*Regra:* edite os =.org= e rode =make tangle=. Os arquivos gerados estão
+versionados para o CI rodar sem etapa extra, mas nunca devem ser editados à mão.
+
+* Instalação
+
+1. Copie a pasta para dentro do vault, por exemplo
+   =~/org/roam/project-code/publishing/= (o diretório =project-code/=
+   já é tratado como /nunca publicável/).
+2. No =init.el=:
+
+#+begin_src emacs-lisp
+(add-to-list 'load-path "~/org/roam/project-code/publishing/lisp")
+(require 'nr)
+;; opcional, se o vault ou a URL não forem os padrões:
+;; (setq nr/vault "~/org/roam/" nr/site-url "https://SEU-USUARIO.github.io")
+#+end_src
+
+3. Requisitos: Emacs com Org ≥ 9.6; para PDF, LuaLaTeX + =latexmk= + pacotes
+   KOMA-Script, tcolorbox, listings, csquotes, babel-portuges; para a busca
+   local, Node (=npx=). O org-roam *não* é necessário para publicar.
+
+* Metadados de uma nota
+
+#+begin_src org
+:PROPERTIES:
+:ID:       ...
+:END:
+#+TITLE: Retropropagação
+#+DESCRIPTION: Como o gradiente é calculado camada a camada.
+#+DATE: [2026-11-12 Thu]
+#+STATUS: crescendo
+#+NOTE_TYPE: estudo
+#+FILETAGS: :ml:estudo:publish:
+#+end_src
+
+| Campo          | Efeito                                                                   |
+|----------------+--------------------------------------------------------------------------|
+| =NOTE_TYPE=    | =estudo= (padrão), =sintese=, =diario=: escolhe classe LaTeX e CSS        |
+| =FILETAGS=     | =publish= torna a nota publicável; =private= a bloqueia sempre            |
+| =STATUS=       | =semente= / =crescendo= / =madura=: selo no site, índice e filtro da busca |
+| =DESCRIPTION=  | resumo no feed, nas sínteses e na pré-visualização de links (Open Graph)  |
+| =DATE=         | ordenação; no PDF sai como =AAAA-MM-DD=                                   |
+
+Caixas (PDF e web): blocos especiais =definicao=, =teorema=, =exemplo=, =nota=.
+*Notas de margem* (estilo Tufte): bloco =#+begin_margem= ... =#+end_margem=;
+no PDF de estudo vai para a margem direita, no site para uma coluna lateral.
+*QR code:* notas publicáveis ganham, no fim do PDF de estudo, o QR e a URL da
+versão web (precisa do pacote =qrcode=; sem ele só sai a URL). Notas privadas e
+o diário nunca recebem URL.
+Para mudar o título da caixa no PDF: =#+ATTR_LATEX: :options [title={Outro}]=.
+
+* Comandos
+
+| Comando                               | O que faz                                                       |
+|---------------------------------------+-----------------------------------------------------------------|
+| =C-c C-e l p=                         | PDF da nota atual (tipo lido de =#+NOTE_TYPE:=)                 |
+| =M-x nr/exportar-diario=              | PDF único do diário entre duas datas                             |
+| =M-x nr/exportar-diario-mes=          | idem, para um mês (=AAAA-MM=)                                    |
+| =M-x nr/publicar= (=C-u= ignora cache) | verifica links, publica o site, grafo, feed, busca              |
+| =M-x nr/verificar-links=              | só o verificador                                                 |
+| =M-x nr/atualizar-dblocks=            | atualiza blocos =notas-por-tag= do vault                         |
+| =M-x nr/nova-nota=                    | cria nota (estudo/síntese/diário) com cabeçalho completo; pergunta se publica (padrão: não) |
+| =C-c n e= / =C-c n d= / =C-c n n=     | nova nota de estudo / entrada de diário (=diario/AAAA-MM-DD.org=) / qualquer tipo (após =(nr/instalar-atalhos)=) |
+| =M-x nr/indice-construir=             | relê o vault (use após editar, antes de exportar uma nota só)    |
+| =make test= / =make build=            | testes / build em lote                                           |
+
+*Cabeçalhos:* =nr/cabecalho= (função pura: tipo, título, =:tags :descricao :status
+:data :id :publicar=) devolve o texto do cabeçalho e pode ser chamada do
+=documents.org=; =nr/criar-nota= grava o arquivo. Sem =:publicar= a nota nasce
+sem a tag =publish=.
+
+*Notas relacionadas* (tags e links em comum; 2 pts por tag não genérica, +3 link
+direto, +1 por alvo de link comum; só notas publicáveis):
+
+#+begin_example
+,#+BEGIN: notas-relacionadas :limite 5 :min 2 :tipo "estudo"
+,#+END:
+#+end_example
+
+*og:image:* =nr/gerar-og= (chamado por =nr/publicar=) gera =og/<nota>.png=
+1200×630 a partir de SVG, se houver =rsvg-convert=, =magick= ou =convert=;
+sem conversor, o recurso se desliga sozinho (sem meta =og:image=).
+
+*Síntese automática:*
+
+#+begin_example
+,#+BEGIN: notas-por-tag :tag "ml" :tipo "estudo" :ordem recentes :resumo t
+,#+END:
+#+end_example
+
+* Como a privacidade funciona
+
+Uma nota só sai do vault se /todas/ as condições valem:
+
+1. tem =publish= em =#+FILETAGS:= e não tem =private=;
+2. não está em =diario/=, =private/=, =templates/=, =project-code/=, =_site/=,
+   =node_modules/= nem em diretório oculto.
+
+Além disso:
+
+- notas não publicáveis são *excluídas do ox-publish* (não viram HTML) e do
+  índice, grafo, feed, sínteses e busca;
+- =[[id:...]]= para nota não publicável vira *texto simples* no HTML e no PDF;
+- o verificador de links *derruba o build* se uma nota publicada linkar para
+  algo inexistente ou não publicado;
+- o CI falha se aparecer um diretório =diario/= na saída ou no grafo;
+- PDFs do diário vão para =nr/exports=, fora do vault.
+
+* Deploy (GitHub Actions)
+
+1. Crie o repositório público do site (=USUARIO.github.io=) e ative o Pages.
+2. Gere uma chave: =ssh-keygen -t ed25519 -f deploy_key -N ""=. Cadastre a
+   pública como /deploy key/ com escrita no repositório do site; guarde a
+   privada como secret =DEPLOY_KEY= no repositório do vault; apague-a do disco.
+3. =make instalar-ci VAULT=~/org/roam= copia o workflow para a raiz do vault.
+4. Ajuste no workflow: =PUBLISHING_DIR=, =NR_SITE_URL=, =external_repository=.
+5. Rode primeiro por /workflow_dispatch/ e leia o log.
+
+O vault pode continuar privado: só o site gerado vai para o repositório público.
+O site precisa ficar na raiz de um domínio (links absolutos como =/css/...=).
+
+* O que mudou em relação aos rascunhos
+
+| Antes                                                                                  | Agora                                                        |
+|----------------------------------------------------------------------------------------+--------------------------------------------------------------|
+| backlinks/grafo/sínteses consultavam o banco do org-roam                               | índice próprio lido dos =.org= (sem org-roam no CI)            |
+| =nr/publicar=, =nr/sitemap=, =nr/sitemap-entrada= redefinidos por arquivos carregados depois | uma definição de cada                                        |
+| 4 ganchos de export dependentes da ordem de carga                                      | um gancho (=nr/pre-export=) com ordem fixa                     |
+| caminhos fixos em =~/org/roam=, =~/site=                                                   | variáveis de ambiente / =defcustom=                            |
+| quatro =.org= com edições manuais entre eles                                             | quatro módulos que se carregam sozinhos (=(require 'nr)=)      |
+| sem testes                                                                             | 22 testes ERT (privacidade, links, HTML, LaTeX, PDF, diário) |
+
+*Bugs reais que os testes pegaram e que existiam nos rascunhos:*
+
+- O =:exclude= do ox-publish é comparado com caminhos /relativos/; a regexp
+  anterior (com caminho absoluto) nunca casava, então *notas privadas seriam
+  publicadas*. Corrigido, com teste.
+- =#+HTML_HEAD:= de uma nota /substitui/ o =:html-head= do projeto: o CSS base
+  não era carregado. Agora entra pelo gancho.
+- Dicionário do Org só tem =pt_BR=: o sumário saía em inglês. Agora "Índice".
+- =org-update-all-dblocks= marca o buffer como modificado mesmo sem mudança;
+  agora só grava (e conta) o que mudou de fato.
+- Normalização de data apagava o /match data/ (=string-match= dentro da função).
+- Autor saía como =root= no PDF; agora vem de =nr/autor=.
+- Fontes ausentes quebravam o PDF; agora há alternativas (Libertinus → Linux
+  Libertine → Latin Modern).
+
+* Estado da verificação
+
+*Testado aqui* (Emacs 29.3, Org 9.6.15): os 22 testes passam, inclusive
+compilação real de PDF (LuaLaTeX) dos três tipos, com nota de margem e QR/URL
+(texto conferido via =pdftotext=); geração de PNG og:image; byte-compile sem avisos;
+publicação ponta a ponta com Pagefind 1.3.0 real (índice com filtros
+tipo/tag/status, lista do índice fora da busca); páginas, grafo global e grafo
+local vistos no navegador.
+
+*Não testado* (precisa do seu ambiente):
+
+- o /visual/ da margem e do QR no PDF (só conferi o texto, não vi a página);
+- o gerador de cabeçalhos não foi ligado ao seu =documents.org= (não o tive
+  aqui): =nr/cabecalho= é independente e você o chama de lá;
+- Emacs 30 / Org 9.7 (o CI usa 30.1; o código trata a diferença de nome do
+  gancho de export, mas rode =make test= lá);
+- o workflow no GitHub (chave de deploy, Pages);
+- =htmlize= (destaque de sintaxe): o sandbox bloqueou o ELPA; sem ele o código
+  sai sem cores, e o CI tenta instalar;
+- o visual com Libertinus (aqui caiu no fallback);
+- o /seu/ diário: assumo headings com =:CREATED:= ou timestamp no título. Se o
+  formato for outro, ajuste =nr/diario-data-da-entrada= em =org/02-export.org=;
+- o D3 vem do CDN jsdelivr (testei com cópia local); baixe-o para
+  =assets/site/js/= se quiser independência.
+
+* Limitações conhecidas
+
+- Links =id:= para /heading/ de outra nota levam à página, não à âncora.
+- A seção "Citada em" entra no sumário da página.
+- Notas sem =:ID:= no arquivo não têm backlinks (mas aparecem no site).
+- =nr/publicar= refaz tudo (cache desligado de propósito: backlinks e sínteses
+  dependem de outras notas). Ligue =nr/usar-cache= se o vault ficar grande.
+- O =index.org= gerado fica na raiz do vault; coloque no =.gitignore=.
+
+* Próximos passos sugeridos
+
+1. Flashcards (=org-fc=) a partir de trechos marcados.
+2. Exportar a semana do diário como síntese semanal.
+3. Ligar =nr/cabecalho= ao =documents.org= e inspecionar o PDF com margem/QR.

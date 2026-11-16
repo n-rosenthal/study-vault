@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Grafo de notas</title>
+  <link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+<nav class="nav"><a href="/">Início</a><a href="/grafo.html">Grafo</a><a href="/feed.xml">Feed</a></nav>
+<h1 class="title">Grafo de notas</h1>
+<p class="subtitle">Clique num nó para abrir a nota. Arraste os nós; role para dar zoom.</p>
+<div class="grafo-controles">
+  <input id="filtro" type="search" placeholder="Filtrar por título ou tag" aria-label="Filtrar nós">
+  <span id="legenda"></span>
+</div>
+<svg id="grafo" role="img" aria-label="Grafo de links entre notas"></svg>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script>
+fetch('/grafo.json').then(function (r) { return r.json(); }).then(function (dados) {
+  var nodes = dados.nodes, links = dados.links;
+  var svg = d3.select('#grafo');
+  var largura = svg.node().clientWidth, altura = svg.node().clientHeight;
+  var idDe = function (x) { return typeof x === 'object' ? x.id : x; };
+
+  var grau = new Map(nodes.map(function (n) { return [n.id, 0]; }));
+  links.forEach(function (l) {
+    grau.set(idDe(l.source), (grau.get(idDe(l.source)) || 0) + 1);
+    grau.set(idDe(l.target), (grau.get(idDe(l.target)) || 0) + 1);
+  });
+  nodes.forEach(function (n) { n.grau = grau.get(n.id) || 0; });
+  var raio = function (n) { return 4 + Math.sqrt(n.grau) * 2.5; };
+
+  var g = svg.append('g');
+  svg.call(d3.zoom().scaleExtent([0.2, 5]).on('zoom', function (e) {
+    g.attr('transform', e.transform);
+  }));
+
+  var sim = d3.forceSimulation(nodes)
+    .force('link', d3.forceLink(links).id(function (d) { return d.id; }).distance(60))
+    .force('carga', d3.forceManyBody().strength(-120))
+    .force('centro', d3.forceCenter(largura / 2, altura / 2))
+    .force('colisao', d3.forceCollide().radius(function (d) { return raio(d) + 2; }));
+
+  var aresta = g.append('g').selectAll('line').data(links).join('line');
+
+  var no = g.append('g').selectAll('g').data(nodes).join('g')
+    .attr('class', function (d) { return 'no tipo-' + d.tipo + (d.grau >= 3 ? ' rotulo' : ''); })
+    .call(d3.drag()
+      .on('start', function (e, d) { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+      .on('drag', function (e, d) { d.fx = e.x; d.fy = e.y; })
+      .on('end', function (e, d) { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null; }));
+
+  no.append('circle').attr('r', raio);
+  no.append('text').text(function (d) { return d.titulo; })
+    .attr('x', function (d) { return raio(d) + 4; }).attr('y', 4);
+  no.on('click', function (e, d) { window.location.href = d.url; });
+
+  var vizinhos = new Map(nodes.map(function (n) { return [n.id, new Set([n.id])]; }));
+  links.forEach(function (l) {
+    vizinhos.get(idDe(l.source)).add(idDe(l.target));
+    vizinhos.get(idDe(l.target)).add(idDe(l.source));
+  });
+  no.on('mouseover', function (e, d) {
+    var v = vizinhos.get(d.id);
+    no.classed('esmaecido', function (n) { return !v.has(n.id); });
+    aresta.classed('esmaecida', function (l) {
+      return idDe(l.source) !== d.id && idDe(l.target) !== d.id;
+    });
+    d3.select(e.currentTarget).classed('ativo', true);
+  }).on('mouseout', function () {
+    no.classed('esmaecido', false).classed('ativo', false);
+    aresta.classed('esmaecida', false);
+  });
+
+  sim.on('tick', function () {
+    aresta.attr('x1', function (l) { return l.source.x; })
+          .attr('y1', function (l) { return l.source.y; })
+          .attr('x2', function (l) { return l.target.x; })
+          .attr('y2', function (l) { return l.target.y; });
+    no.attr('transform', function (d) { return 'translate(' + d.x + ',' + d.y + ')'; });
+  });
+
+  document.querySelector('#filtro').addEventListener('input', function (e) {
+    var q = e.target.value.trim().toLowerCase();
+    no.classed('fora', function (d) {
+      return q && !(d.titulo.toLowerCase().indexOf(q) >= 0 ||
+                    d.tags.some(function (t) { return t.toLowerCase().indexOf(q) >= 0; }));
+    });
+  });
+
+  var tipos = Array.from(new Set(nodes.map(function (n) { return n.tipo; })));
+  document.querySelector('#legenda').innerHTML = tipos.map(function (t) {
+    return '<span class="chave tipo-' + t + '">' + t + '</span>';
+  }).join('');
+});
+</script>
+</body>
+</html>

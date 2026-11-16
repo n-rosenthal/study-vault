@@ -1,0 +1,8 @@
+/* Sínteses: sumário fixo à esquerda em telas largas. */
+@media (min-width: 70rem) {
+  body { max-width: 50rem; margin-left: 22rem; }
+  #table-of-contents {
+    position: fixed; top: 2rem; left: 2rem; width: 17rem;
+    max-height: 85vh; overflow-y: auto; font-size: 0.85rem;
+  }
+}

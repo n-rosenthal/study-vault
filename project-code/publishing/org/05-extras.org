@@ -1,0 +1,419 @@
+#+TITLE: Extras: modelos de nota, notas relacionadas e imagens de pré-visualização
+#+AUTHOR: Nicolas
+#+LANGUAGE: pt_BR
+#+PROPERTY: header-args:emacs-lisp :mkdirp yes :comments no
+#+STARTUP: overview
+
+* Visão geral
+
+| Módulo               | Função                                                                    |
+|----------------------+---------------------------------------------------------------------------|
+| =nr-template.el=     | gera o cabeçalho de metadados e cria notas novas por tipo                  |
+| =nr-relacionadas.el= | bloco dinâmico =notas-relacionadas= (tags e links em comum)                |
+| =nr-og.el=           | imagem de pré-visualização (=og:image=) por nota, em PNG                   |
+
+Fora deste arquivo, três recursos entram em módulos existentes:
+
+- *Notas de margem* (estilo Tufte) no PDF: bloco especial =margem= em
+  =estudo.sty= (veja =02-export.org=);
+- *QR code* para a versão web ao fim do PDF de notas publicáveis (=02-export.org=);
+- as =<meta>= do =og:image= no cabeçalho HTML (gancho de =02-export.org=).
+
+* =nr-template.el=: cabeçalhos e notas novas
+
+*Sobre o seu =documents.org=:* eu não tenho o conteúdo atual dele aqui, então
+não o alterei. Em vez disso, o gerador de cabeçalho é *uma função pura*,
+=nr/cabecalho=, com uma interface pequena (tipo, título e um plist). Você pode
+chamá-la de dentro do =documents.org= (ou trocar o corpo dela pelas suas
+structs =drawer= / =key-value-pair=, mantendo a assinatura) sem mexer no resto.
+
+*Privacidade por padrão:* uma nota nova *não* recebe a tag =publish=. Só recebe
+se você responder "sim" ao criar (ou passar =:publicar t=).
+
+Uso: =M-x nr/nova-nota= pergunta tipo, título, tags e se publica; cria o arquivo
+em =estudos/=, =sinteses/= ou =diario/= do vault, com =:ID:= novo, e o abre.
+
+#+begin_src emacs-lisp :tangle ../lisp/nr-template.el
+;;; nr-template.el --- Cabeçalhos e notas novas por tipo -*- lexical-binding: t; -*-
+
+;; Gerado por tangle de org/05-extras.org. Edite o .org, não este arquivo.
+
+;;; Code:
+
+(require 'nr-core)
+(require 'org-id)
+(require 'ucs-normalize)
+(require 'nr-diario)
+
+(defconst nr/modelos
+  '(("study"     :dir "estudos/"  :status t   :corpo nr/--corpo-estudo)
+    ("synthesis" :dir "sinteses/" :status t   :corpo nr/--corpo-sintese)
+    ("journal"   :dir "diario/"   :status nil :corpo nr/--corpo-diario))
+  "Modelos por #+NOTE_TYPE: diretório, se leva #+STATUS: e função do corpo.")
+
+(defun nr/--corpo-estudo (_tags)
+  (concat "* Ideia central\n\n* Detalhes\n\n* Exemplos\n\n* Perguntas em aberto\n"))
+
+(defun nr/--corpo-sintese (tags)
+  (let ((tag (or (car (remove nr/tag-publicar tags)) "TAG")))
+    (concat "* Notas de estudo\n"
+            (format "#+BEGIN: notas-por-tag :tag \"%s\" :tipo \"study\" :resumo t\n" tag)
+            "#+END:\n\n"
+            "* Relacionadas\n"
+            "#+BEGIN: notas-relacionadas :limite 5\n"
+            "#+END:\n")))
+
+(defun nr/--corpo-diario (_tags) "")
+
+(defun nr/cabecalho (tipo titulo &rest plist)
+  "Texto do cabeçalho de uma nota de TIPO com TITULO.
+PLIST aceita :tags (lista), :descricao, :status, :data (AAAA-MM-DD), :id
+e :publicar (non-nil adiciona a tag de publicação)."
+  (let* ((cfg (cdr (or (assoc tipo nr/modelos)
+                       (error "Tipo de nota desconhecido: %s" tipo))))
+         (tags (delete-dups
+                (append (plist-get plist :tags)
+                        (unless (equal tipo "diario") (list tipo))
+                        (and (plist-get plist :publicar) (list nr/tag-publicar)))))
+         (id (or (plist-get plist :id) (org-id-uuid)))
+         (data (or (plist-get plist :data) (format-time-string "%Y-%m-%d")))
+         (status (or (plist-get plist :status) "seed")))
+    (concat ":PROPERTIES:\n"
+            (format ":ID:       %s\n" id)
+            ":END:\n"
+            (format "#+TITLE: %s\n" titulo)
+            (format "#+DATE: [%s]\n" (format-time-string
+                                      "%Y-%m-%d %a"
+                                      (date-to-time (concat data " 12:00:00"))))
+            (format "#+DESCRIPTION: %s\n" (or (plist-get plist :descricao) ""))
+            (if (plist-get cfg :status) (format "#+STATUS: %s\n" status) "")
+            (format "#+NOTE_TYPE: %s\n" tipo)
+            (if tags (format "#+FILETAGS: :%s:\n" (string-join tags ":")) "")
+            "\n")))
+
+(defun nr/--slug (texto)
+  "TEXTO em minúsculas, sem acentos, com hífens (slug de arquivo)."
+  (let* ((s (ucs-normalize-NFD-string (downcase texto)))
+         (s (replace-regexp-in-string "[\u0300-\u036f]" "" s))
+         (s (replace-regexp-in-string "[^a-z0-9]+" "-" s)))
+    (string-trim s "-" "-")))
+
+(defun nr/criar-nota (tipo titulo &rest plist)
+  "Cria o arquivo de uma nota nova e devolve o caminho. PLIST: `nr/cabecalho'."
+  (let* ((cfg (cdr (assoc tipo nr/modelos)))
+         (dir (if (equal tipo "journal")
+                  nr/diario-dir
+                (expand-file-name (plist-get cfg :dir) nr/vault)))
+         (base (if (equal tipo "journal")
+                   (or (plist-get plist :data) (format-time-string "%Y-%m-%d"))
+                 (nr/--slug titulo)))
+         (arq (expand-file-name (concat base ".org") dir)))
+    (when (string-empty-p base) (user-error "Título inválido: %S" titulo))
+    (when (file-exists-p arq) (user-error "Já existe: %s" arq))
+    (make-directory dir t)
+    (with-temp-file arq
+      (set-buffer-file-coding-system 'utf-8-unix)
+      (insert (apply #'nr/cabecalho tipo titulo plist)
+              (funcall (plist-get cfg :corpo) (plist-get plist :tags))))
+    arq))
+
+;;;###autoload
+(defun nr/nova-nota (tipo titulo tags publicar)
+  "Cria uma nota nova (e a abre). Sem confirmação explícita, ela fica privada."
+  (interactive
+   (list (completing-read "Tipo: " (mapcar #'car nr/modelos) nil t nil nil "study")
+         (read-string "Título: ")
+         (split-string (read-string "Tags (separadas por espaço): ") " " t)
+         (y-or-n-p "Publicar no site? ")))
+  (find-file (nr/criar-nota tipo titulo :tags tags :publicar publicar)))
+
+;;;###autoload
+(defun nr/nova-nota-estudo (titulo &optional tags)
+  "Cria uma nota de estudo privada com TITULO e a abre.
+Com prefixo (\\[universal-argument]) pergunta também se ela é publicada."
+  (interactive
+   (list (read-string "Título: ")
+         (split-string (read-string "Tags (espaço): ") " " t)))
+  (find-file (nr/criar-nota "study" titulo :tags tags
+                            :publicar (and current-prefix-arg
+                                           (y-or-n-p "Publicar no site? ")))))
+
+(defun nr/--entrada-diario (&optional titulo data)
+  "Texto de uma entrada nova do diário; :CREATED: é DATA (padrão hoje) + hora."
+  (format "* %s%s\n:PROPERTIES:\n:CREATED:  %s\n:END:\n\n"
+          (format-time-string "%H:%M")
+          (if (and titulo (not (string-empty-p titulo))) (concat " — " titulo) "")
+          (format-time-string
+           "[%Y-%m-%d %a %H:%M]"
+           (date-to-time (concat (or data (format-time-string "%Y-%m-%d"))
+                                 (format-time-string " %H:%M:%S"))))))
+
+;;;###autoload
+(defun nr/nova-nota-diario (&optional data titulo)
+  "Abre o diário do dia DATA (AAAA-MM-DD; padrão hoje) e inicia uma entrada.
+O arquivo é `nr/diario-dir'/AAAA-MM-DD.org; se já existe, só acrescenta
+uma entrada com a hora atual. Com prefixo, pergunta a data."
+  (interactive
+   (list (when current-prefix-arg (org-read-date nil nil nil "Data: "))
+         (read-string "Título da entrada (opcional): ")))
+  (let* ((data (or data (format-time-string "%Y-%m-%d")))
+         (arq (expand-file-name (concat data ".org") nr/diario-dir)))
+    (unless (file-exists-p arq)
+      (nr/criar-nota "journal" data :data data))
+    (find-file arq)
+    (goto-char (point-max))
+    (unless (bolp) (insert "\n"))
+    (insert (nr/--entrada-diario titulo data))
+    (save-buffer)))
+
+;;;; Atalhos e org-capture
+
+(defvar nr/mapa-nova (make-sparse-keymap) "Atalhos para criar notas.")
+(define-key nr/mapa-nova (kbd "e") #'nr/nova-nota-estudo)
+(define-key nr/mapa-nova (kbd "d") #'nr/nova-nota-diario)
+(define-key nr/mapa-nova (kbd "n") #'nr/nova-nota)
+
+(defun nr/instalar-atalhos (&optional prefixo)
+  "Liga PREFIXO (padrão \"C-c n\") ao mapa: e = estudo, d = diário, n = qualquer."
+  (global-set-key (kbd (or prefixo "C-c n")) nr/mapa-nova))
+
+(defun nr/capture-diario ()
+  "Para `org-capture': vai ao diário de hoje (criando-o) e posiciona no fim."
+  (let ((arq (expand-file-name (format-time-string "%Y-%m-%d.org") nr/diario-dir)))
+    (unless (file-exists-p arq)
+      (nr/criar-nota "journal" (format-time-string "%Y-%m-%d")))
+    (set-buffer (find-file-noselect arq))
+    (goto-char (point-max))))
+
+(defun nr/capture-templates ()
+  "Modelo de `org-capture' para uma entrada de diário (tecla \"d\").
+Uso: (add-to-list \='org-capture-templates (car (nr/capture-templates)))."
+  (list `("d" "Entrada de diário" plain (function nr/capture-diario)
+          ,(concat "* %<%H:%M> — %?\n:PROPERTIES:\n:CREATED:  %U\n:END:\n")
+          :empty-lines-before 1 :unnarrowed t)))
+
+(provide 'nr-template)
+;;; nr-template.el ends here
+#+end_src
+
+* =nr-relacionadas.el=: notas relacionadas
+
+Bloco dinâmico para sínteses (e para o fim de qualquer nota):
+
+#+begin_example
+,#+BEGIN: notas-relacionadas :limite 5
+,#+END:
+#+end_example
+
+Pontuação de cada outra nota em relação à nota atual:
+
+| Critério                                                  | Pontos       |
+|-----------------------------------------------------------+--------------|
+| cada tag em comum (ignorando =publish=, =estudo=, =sintese=, =diario=) | 2 cada |
+| uma linka a outra (em qualquer direção)                   | 3            |
+| cada destino de link em comum (as duas citam a mesma nota)| 1 cada       |
+
+Parâmetros: =:limite= (padrão 5), =:min= (pontuação mínima, padrão 1),
+=:tipo= (restringe o tipo), =:somente-publicaveis= (padrão =t=, pelo mesmo
+motivo do =notas-por-tag=: o resultado é texto gravado no arquivo).
+
+#+begin_src emacs-lisp :tangle ../lisp/nr-relacionadas.el
+;;; nr-relacionadas.el --- Bloco dinâmico notas-relacionadas -*- lexical-binding: t; -*-
+
+;; Gerado por tangle de org/05-extras.org. Edite o .org, não este arquivo.
+
+;;; Code:
+
+(require 'nr-core)
+(require 'nr-index)
+(require 'nr-sinteses)
+
+(defconst nr/tags-genericas '("study" "synthesis" "journal"))
+
+(defun nr/--tags-relevantes (nota)
+  (seq-remove (lambda (tg) (or (equal tg nr/tag-publicar) (member tg nr/tags-genericas)))
+              (nr/nota-tags nota)))
+
+(defun nr/--linka-p (a b)
+  "Non-nil se A linka para alguma das ids de B."
+  (seq-some (lambda (id) (member id (nr/nota-links-id a))) (nr/nota-ids b)))
+
+(defun nr/afinidade (a b)
+  "Plist (:pontos N :tags (...)) da relação entre as notas A e B."
+  (let* ((comuns (seq-intersection (nr/--tags-relevantes a) (nr/--tags-relevantes b) #'equal))
+         (direto (or (nr/--linka-p a b) (nr/--linka-p b a)))
+         (alvos (seq-difference
+                 (seq-intersection (delete-dups (copy-sequence (nr/nota-links-id a)))
+                                   (delete-dups (copy-sequence (nr/nota-links-id b)))
+                                   #'equal)
+                 (append (nr/nota-ids a) (nr/nota-ids b)) #'equal)))
+    (list :pontos (+ (* 2 (length comuns)) (if direto 3 0) (length alvos))
+          :tags comuns)))
+
+(defun nr/relacionadas (nota &optional tipo so-publicaveis)
+  "Lista de (NOTA-RELACIONADA . AFINIDADE), da mais para a menos relacionada."
+  (let (res)
+    (dolist (outra (nr/notas))
+      (unless (or (eq outra nota)
+                  (and tipo (not (equal (nr/nota-tipo outra) tipo)))
+                  (and so-publicaveis (not (nr/nota-publicavel outra))))
+        (let ((af (nr/afinidade nota outra)))
+          (when (> (plist-get af :pontos) 0)
+            (push (cons outra af) res)))))
+    (sort res (lambda (x y)
+                (let ((px (plist-get (cdr x) :pontos)) (py (plist-get (cdr y) :pontos)))
+                  (or (> px py)
+                      (and (= px py)
+                           (string< (downcase (nr/nota-titulo (car x)))
+                                    (downcase (nr/nota-titulo (car y)))))))))))
+
+(defun org-dblock-write:notas-relacionadas (params)
+  "Lista notas relacionadas à nota atual. Parâmetros: veja org/05-extras.org."
+  (let* ((arq (and (buffer-file-name) (expand-file-name (buffer-file-name))))
+         (nota (and arq (nr/nota-por-arquivo arq)))
+         (limite (or (plist-get params :limite) 5))
+         (minimo (or (plist-get params :min) 1))
+         (tipo (plist-get params :tipo))
+         (so-publicaveis (if (plist-member params :somente-publicaveis)
+                             (plist-get params :somente-publicaveis)
+                           t)))
+    (unless nota (user-error "Esta nota não está no índice (rode `nr/indice-construir')"))
+    (let ((itens (seq-take
+                  (seq-filter (lambda (x) (>= (plist-get (cdr x) :pontos) minimo))
+                              (nr/relacionadas nota tipo so-publicaveis))
+                  limite)))
+      (insert
+       (if itens
+           (mapconcat
+            (lambda (x)
+              (let ((tags (plist-get (cdr x) :tags)))
+                (concat (nr/--linha-nota (car x) nil)
+                        (when tags (format " (em comum: %s)" (string-join tags ", "))))))
+            itens "\n")
+         "/(nenhuma nota relacionada)/")))))
+
+(provide 'nr-relacionadas)
+;;; nr-relacionadas.el ends here
+#+end_src
+
+*Atualização em lote:* =nr/atualizar-dblocks= (em =nr-sinteses.el=) só procura
+blocos =notas-por-tag=. Ele passa a procurar também =notas-relacionadas=
+(veja a edição em =03-site.org=).
+
+* =nr-og.el=: imagem de pré-visualização
+
+Quando alguém compartilha o link de uma nota, WhatsApp, Slack, LinkedIn e
+afins mostram a =og:image=. Cada nota *publicável* ganha um cartão PNG
+1200×630 (tipo, status, título, tags, nome do site), gerado a partir de um SVG.
+
+- Conversor: =rsvg-convert= (pacote =librsvg2-bin=) ou ImageMagick (=magick= /
+  =convert=). Sem nenhum deles, o recurso se desliga sozinho: não há imagem e
+  as =<meta>= de imagem não são emitidas (nada quebra).
+- As imagens vão para =og/= no site, com a mesma estrutura de pastas das notas.
+- Pelo padrão da Open Graph, a URL da imagem é /absoluta/: defina =NR_SITE_URL=.
+- A tipografia do cartão usa a fonte =sans-serif= do sistema.
+
+#+begin_src emacs-lisp :tangle ../lisp/nr-og.el
+;;; nr-og.el --- Imagens de pré-visualização (og:image) -*- lexical-binding: t; -*-
+
+;; Gerado por tangle de org/05-extras.org. Edite o .org, não este arquivo.
+
+;;; Code:
+
+(require 'nr-core)
+(require 'nr-index)
+
+(defun nr/--conversor-svg ()
+  "Símbolo do conversor SVG→PNG disponível (rsvg, magick, convert) ou nil."
+  (cond ((executable-find "rsvg-convert") 'rsvg)
+        ((executable-find "magick") 'magick)
+        ((executable-find "convert") 'convert)))
+
+(defcustom nr/og-imagens (and (nr/--conversor-svg) t)
+  "Se non-nil, gera uma imagem og:image por nota publicável."
+  :type 'boolean :group 'nr)
+
+(defun nr/og-caminho (nota)
+  "Caminho (relativo à raiz do site) da imagem og de NOTA."
+  (concat "/og/"
+          (mapconcat #'url-hexify-string
+                     (split-string (file-name-sans-extension (nr/nota-rel nota)) "/")
+                     "/")
+          ".png"))
+
+(defun nr/--quebrar-linhas (texto largura max-linhas)
+  "Quebra TEXTO em linhas de até LARGURA caracteres; no máximo MAX-LINHAS."
+  (let (linhas atual)
+    (dolist (p (split-string texto "[ \t\n]+" t))
+      (if (and atual (> (+ (length atual) 1 (length p)) largura))
+          (progn (push atual linhas) (setq atual p))
+        (setq atual (if atual (concat atual " " p) p))))
+    (when atual (push atual linhas))
+    (setq linhas (nreverse linhas))
+    (if (<= (length linhas) max-linhas)
+        linhas
+      (append (seq-take linhas (1- max-linhas))
+              (list (concat (nth (1- max-linhas) linhas) "…"))))))
+
+(defun nr/og-svg (nota)
+  "Texto SVG do cartão de NOTA."
+  (let* ((tipo (nr/nota-tipo nota))
+         (cor (if (equal tipo "sintese") "#2e7d4f" "#1f4e8c"))
+         (rotulo (upcase (string-join (delq nil (list tipo (nr/nota-status nota))) " · ")))
+         (linhas (nr/--quebrar-linhas (nr/nota-titulo nota) 24 3))
+         (tags (mapconcat (lambda (tg) (concat "#" tg))
+                          (seq-take (nr/tags-visiveis nota) 4) "   ")))
+    (concat
+     "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1200\" height=\"630\" viewBox=\"0 0 1200 630\">\n"
+     "<rect width=\"1200\" height=\"630\" fill=\"#fdfdfc\"/>\n"
+     (format "<rect width=\"28\" height=\"630\" fill=\"%s\"/>\n" cor)
+     (format "<text x=\"96\" y=\"120\" font-family=\"sans-serif\" font-size=\"30\" letter-spacing=\"3\" fill=\"#666666\">%s</text>\n"
+             (nr/escapar-html rotulo))
+     (let ((i -1))
+       (mapconcat
+        (lambda (l)
+          (setq i (1+ i))
+          (format "<text x=\"96\" y=\"%d\" font-family=\"sans-serif\" font-size=\"72\" font-weight=\"bold\" fill=\"%s\">%s</text>"
+                  (+ 250 (* i 88)) cor (nr/escapar-html l)))
+        linhas "\n"))
+     "\n"
+     (format "<text x=\"96\" y=\"528\" font-family=\"sans-serif\" font-size=\"30\" fill=\"%s\">%s</text>\n"
+             cor (nr/escapar-html tags))
+     (format "<text x=\"96\" y=\"588\" font-family=\"sans-serif\" font-size=\"28\" fill=\"#666666\">%s</text>\n"
+             (nr/escapar-html nr/titulo-do-site))
+     "</svg>\n")))
+
+(defun nr/--svg-para-png (svg png)
+  "Converte o arquivo SVG em PNG com o conversor disponível."
+  (let ((conv (nr/--conversor-svg)))
+    (unless conv (error "Nenhum conversor SVG→PNG encontrado"))
+    (unless (zerop (pcase conv
+                     ('rsvg (call-process "rsvg-convert" nil nil nil "-w" "1200" "-o" png svg))
+                     ('magick (call-process "magick" nil nil nil svg png))
+                     ('convert (call-process "convert" nil nil nil svg png))))
+      (error "Falha ao converter %s" svg))))
+
+(defun nr/gerar-og ()
+  "Gera as og:image das notas publicáveis em og/. Devolve a contagem."
+  (interactive)
+  (if (not (and nr/og-imagens (nr/--conversor-svg)))
+      (progn (message "og:image desligado (sem conversor SVG→PNG)") 0)
+    (let ((n 0) (tmp (make-temp-file "nr-og-" nil ".svg")))
+      (unwind-protect
+          (dolist (nota (nr/notas t))
+            (let ((png (expand-file-name
+                        (concat "og/" (file-name-sans-extension (nr/nota-rel nota)) ".png")
+                        nr/saida)))
+              (make-directory (file-name-directory png) t)
+              (with-temp-file tmp
+                (set-buffer-file-coding-system 'utf-8-unix)
+                (insert (nr/og-svg nota)))
+              (nr/--svg-para-png tmp png)
+              (setq n (1+ n))))
+        (delete-file tmp))
+      (message "Imagens og:image: %d" n)
+      n)))
+
+(provide 'nr-og)
+;;; nr-og.el ends here
+#+end_src

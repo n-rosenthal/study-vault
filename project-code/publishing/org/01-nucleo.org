@@ -1,0 +1,371 @@
+#+TITLE: Núcleo: configuração e índice do vault
+#+AUTHOR: n-rosenthal
+#+LANGUAGE: pt
+#+PROPERTY: header-args:emacs-lisp :mkdirp yes :comments no
+#+STARTUP: overview
+
+* Visão geral
+Este arquivo define as duas peças das quais todo o resto depende.
+
+| Módulo      | Função                                                                 |
+|-------------+------------------------------------------------------------------------|
+| =nr-core.el=  | caminhos configuráveis, regras de privacidade (diretórios), utilidades |
+| =nr-index.el= | lê o vault *uma vez* e monta o índice: notas, ids, links, backlinks      |
+
+*Decisão central:* o build não consulta o banco do org-roam. O índice lê os =.org= diretamente (=:ID:=, =[[id:...]]=, =#+FILETAGS:= etc.). Isso elimina a dependência do org-roam e do SQLite no CI, torna o resultado determinístico e dá, de graça, uma única fonte de verdade para backlinks, grafo, blocos dinâmicos, feed e verificador de links. Blocos =src=, =example=, =export= e =comment= são ignorados na leitura, então exemplos de documentação (como o =:ID: xxxx= abaixo) não viram notas nem links.
+
+* =nr-core.el=
+Tudo que depende de caminho vem de variáveis de ambiente (úteis no CI) com padrões razoáveis:
+
+| Variável    | Padrão                                 | Uso                                  |
+|-------------+----------------------------------------+--------------------------------------|
+| =NR_VAULT=    | =~/org/roam/vault/export/=               | raiz das notas                       |
+| =NR_SAIDA=    | =~/org/roam/vault/export/site/public/=   | site gerado                          |
+| =NR_EXPORTS=  | =~/org/roam/export/=                     | PDFs avulsos (diário), fora do vault |
+| =NR_CACHE=    | =~/org/roam/vault/.cache/nr-publicacao/= | cache do ox-publish                  |
+| =NR_SITE_URL= | =https://SEU-USUARIO.github.io=          | URL base (feed, PDFs com links)      |
+| =NR_AUTOR=    | =n-rosenthal=                            | autor nos PDFs gerados               |
+
+*Privacidade por diretório:* qualquer arquivo dentro de =diario/=, =private/=,
+=templates/=, =project-code/=, =_site/=, =node_modules/= ou de qualquer
+diretório oculto (começando por =.=) *nunca* é publicável, independentemente
+das tags. Os nomes são relativos ao vault, então o vault pode morar num
+caminho que contenha essas palavras.
+
+#+begin_src emacs-lisp :tangle ../lisp/nr-core.el
+;;; nr-core.el --- Configuração, caminhos e utilidades -*- lexical-binding: t; -*-
+
+;; Gerado por tangle de org/01-nucleo.org. Edite o .org, não este arquivo.
+
+;;; Code:
+
+(require 'cl-lib)
+(require 'seq)
+(require 'subr-x)
+
+(defgroup nr nil
+  "Pipeline de publicação org → PDF e web."
+  :group 'org
+  :prefix "nr/")
+
+
+;; org/roam/project-code/publishing/
+(defconst nr/projeto-dir
+  (file-name-directory
+   (directory-file-name
+    (file-name-directory (or load-file-name buffer-file-name default-directory))))
+  "Raiz deste projeto (diretório pai de lisp/).")
+
+;; org/roam/project-code/publishing/assets
+(defconst nr/assets-dir (expand-file-name "assets/" nr/projeto-dir)
+  "Diretório com estilos LaTeX, CSS, JS e páginas estáticas.")
+
+;; ?
+(defun nr/--diretorio-env (variavel padrao)
+  "Diretório de VARIAVEL de ambiente, ou PADRAO, sempre com barra final."
+  (file-name-as-directory (expand-file-name (or (getenv variavel) padrao))))
+
+;; ~/org/roam/vault/export/
+(defcustom nr/vault (nr/--diretorio-env "NR_VAULT" "~/org/roam/vault/export")
+  "Raiz do vault de notas."
+  :type 'directory :group 'nr)
+
+;; ~/org/roam/vault/export/site/public/
+(defcustom nr/saida (nr/--diretorio-env "NR_SAIDA" "~/org/roam/vault/export/site/public/")
+  "Diretório onde o site é gerado."
+  :type 'directory :group 'nr)
+
+;; /org/roam/export/
+(defcustom nr/exports (nr/--diretorio-env "NR_EXPORTS" "~/org/roam/export/")
+  "Onde ficam os PDFs avulsos (mantenha fora do vault)."
+  :type 'directory :group 'nr)
+
+(defcustom nr/cache (nr/--diretorio-env "NR_CACHE" "~/.cache/nr-publicacao/")
+  "Cache do ox-publish."
+  :type 'directory :group 'nr)
+
+(defcustom nr/site-url
+  (string-remove-suffix "/" (or (getenv "NR_SITE_URL") "https://n-rosenthal.github.io"))
+  "URL base do site, sem barra final."
+  :type 'string :group 'nr)
+
+(defcustom nr/autor (or (getenv "NR_AUTOR") "n-rosenthal")
+  "Autor usado nos documentos gerados."
+  :type 'string :group 'nr)
+
+(defcustom nr/titulo-do-site "study-vault"
+  "Título do índice e do feed."
+  :type 'string :group 'nr)
+
+(defcustom nr/diretorios-proibidos
+  '("journal" "private" "templates" "project-code" "_site" "node_modules")
+  "Diretórios (relativos ao vault) cujo conteúdo nunca é publicado."
+  :type '(repeat string) :group 'nr)
+
+(defcustom nr/tag-publicar "publish"
+  "Tag em #+FILETAGS: que torna uma nota publicável."
+  :type 'string :group 'nr)
+
+(defcustom nr/tag-privada "private"
+  "Tag em #+FILETAGS: que impede a publicação, mesmo com a tag de publicar."
+  :type 'string :group 'nr)
+
+;;;; Caminhos e privacidade
+
+(defun nr/diretorio-proibido-p (arquivo)
+  "Non-nil se ARQUIVO está em diretório proibido ou oculto do vault."
+  (let ((rel (file-relative-name arquivo nr/vault)))
+    (and (not (string-prefix-p ".." rel))
+         (seq-some (lambda (d)
+                     (or (member d nr/diretorios-proibidos)
+                         (string-prefix-p "." d)))
+                   (butlast (split-string rel "/" t))))))
+
+(defun nr/regexp-diretorios-proibidos ()
+  "Regexp (para :exclude do ox-publish) dos diretórios proibidos do vault.
+O ox-publish compara o :exclude com o caminho *relativo* à raiz do projeto
+(por exemplo \"private/x.org\"), então a regexp não contém o caminho do vault."
+  (concat "\\`\\(?:.*/\\)?"
+          "\\(?:" (mapconcat #'regexp-quote nr/diretorios-proibidos "\\|")
+          "\\|\\.[^/]+\\)/"))
+
+(defun nr/arquivos-org ()
+  "Todos os .org do vault, sem descer em diretórios ocultos nem pegar backups."
+  (directory-files-recursively
+   nr/vault "\\`[^.#][^/]*\\.org\\'" nil
+   (lambda (dir)
+     (not (string-prefix-p "." (file-name-nondirectory (directory-file-name dir)))))))
+
+;;;; Texto
+(defun nr/escapar-html (texto)
+  "Escapa TEXTO para uso em HTML/XML, inclusive em atributos."
+  (let ((s (or texto "")))
+    (dolist (par '(("&" . "&amp;") ("<" . "&lt;") (">" . "&gt;") ("\"" . "&quot;")) s)
+      (setq s (replace-regexp-in-string (car par) (cdr par) s t t)))))
+
+(defun nr/data-curta (texto)
+  "AAAA-MM-DD contido em TEXTO, ou nil."
+  (when (and texto (string-match "[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}" texto))
+    (match-string 0 texto)))
+
+(defun nr/adicionar-hook-pre-export (funcao)
+  "Registra FUNCAO (recebe BACKEND) antes do processamento de export.
+Org >= 9.7 usa `org-export-before-processing-functions'; antes, `-hook'."
+  (require 'ox)
+  (add-hook (if (boundp 'org-export-before-processing-functions)
+                'org-export-before-processing-functions
+              'org-export-before-processing-hook)
+            funcao))
+
+(provide 'nr-core)
+;;; nr-core.el ends here
+#+end_src
+
+#+RESULTS:
+: nr-core
+
+* =nr-index.el=
+
+Cada nota vira uma struct =nr/nota=:
+
+| Campo      | Origem                                                  |
+|------------+---------------------------------------------------------|
+| =titulo=     | =#+TITLE:= (ou o nome do arquivo)                         |
+| =id= / =ids=   | =:ID:= no cabeçalho do arquivo / todos os =:ID:= do arquivo |
+| =tipo=       | =#+NOTE_TYPE:= (=study, synthesis=, =journal=; padrão =study=)  |
+| =tags=       | =#+FILETAGS:=                                             |
+| =data=       | =#+DATE:= (ou a data de modificação)                      |
+| =status=     | =#+STATUS:= (=seed, =growing=, =mature=)                       |
+| =desc=       | =#+DESCRIPTION:=                                          |
+| =publicavel= | tag =publish=, sem =private=, fora de diretório proibido    |
+| =palavras=   | contagem (tempo de leitura)                             |
+| =links-id=   | ids alvo de =[[id:...]]=                                  |
+| =links-arq=  | alvos de =[[file:...]]= e =[[./...]]=                       |
+
+Um link para o =:ID:= de um /heading/ conta como link para a nota inteira.
+Arquivos com =#+NOTE_TYPE: indice= (o índice gerado pelo próprio build) ficam
+fora do índice.
+
+#+begin_src emacs-lisp :tangle ../lisp/nr-index.el
+;;; nr-index.el --- Índice do vault: notas, ids, links, backlinks -*- lexical-binding: t; -*-
+
+;; Gerado por tangle de org/01-nucleo.org. Edite o .org, não este arquivo.
+
+;;; Code:
+
+(require 'nr-core)
+(require 'url-util)
+
+(cl-defstruct (nr/nota (:constructor nr/nota--novo))
+  arquivo rel titulo id ids tipo tags data status desc publicavel
+  palavras links-id links-arq)
+
+(defvar nr/indice nil "Hash arquivo → `nr/nota', ou nil se ainda não construído.")
+(defvar nr/indice--por-id nil "Hash id → `nr/nota'.")
+(defvar nr/indice--backlinks nil "Hash arquivo → lista de `nr/nota' que linkam para ele.")
+
+;;;; Leitura de uma nota
+
+(defun nr/--remover-blocos ()
+  "Apaga do buffer atual blocos src/example/export/comment/verse."
+  (goto-char (point-min))
+  (let ((case-fold-search t))
+    (while (re-search-forward
+            "^[ \t]*#\\+begin_\\(src\\|example\\|export\\|comment\\|verse\\)\\b" nil t)
+      (let ((ini (line-beginning-position))
+            (tipo (match-string 1)))
+        (if (re-search-forward (format "^[ \t]*#\\+end_%s\\b.*$" tipo) nil t)
+            (delete-region ini (min (1+ (point)) (point-max)))
+          (delete-region ini (point-max)))))))
+
+(defun nr/--palavra-chave (chave limite)
+  "Valor de #+CHAVE: antes de LIMITE no buffer atual, ou nil."
+  (save-excursion
+    (goto-char (point-min))
+    (let ((case-fold-search t))
+      (when (re-search-forward
+             (format "^#\\+%s:[ \t]*\\(.*\\)$" (regexp-quote chave)) limite t)
+        (let ((v (string-trim (match-string 1))))
+          (unless (string-empty-p v) v))))))
+
+(defun nr/--tags (valor)
+  (split-string (or valor "") "[: \t]+" t))
+
+(defun nr/--coletar (regexp grupo)
+  "Lista (na ordem do arquivo) das capturas GRUPO de REGEXP no buffer."
+  (goto-char (point-min))
+  (let (res)
+    (while (re-search-forward regexp nil t)
+      (push (match-string grupo) res))
+    (nreverse res)))
+
+(defun nr/--sem-ancora (caminho)
+  (car (split-string caminho "::")))
+
+(defun nr/nota-ler (arquivo)
+  "Lê ARQUIVO e devolve uma `nr/nota'."
+  (with-temp-buffer
+    (let ((coding-system-for-read 'utf-8))
+      (insert-file-contents arquivo))
+    (nr/--remover-blocos)
+    (goto-char (point-min))
+    (let* ((limite (save-excursion
+                     (if (re-search-forward "^\\*+ " nil t)
+                         (match-beginning 0)
+                       (point-max))))
+           (kw (lambda (k) (nr/--palavra-chave k limite)))
+           (tags (nr/--tags (funcall kw "FILETAGS")))
+           (rel (file-relative-name arquivo nr/vault))
+           ids id-arquivo)
+      (goto-char (point-min))
+      (while (re-search-forward "^[ \t]*:ID:[ \t]+\\([^ \t\n]+\\)" nil t)
+        (when (and (null id-arquivo) (< (match-beginning 0) limite))
+          (setq id-arquivo (match-string 1)))
+        (push (match-string 1) ids))
+      (nr/nota--novo
+       :arquivo arquivo
+       :rel rel
+       :titulo (or (funcall kw "TITLE") (file-name-base arquivo))
+       :id id-arquivo
+       :ids (nreverse ids)
+       :tipo (downcase (or (funcall kw "NOTE_TYPE") "study"))
+       :tags tags
+       :data (or (nr/data-curta (funcall kw "DATE"))
+                 (format-time-string
+                  "%Y-%m-%d" (file-attribute-modification-time (file-attributes arquivo))))
+       :status (let ((s (funcall kw "STATUS"))) (and s (downcase s)))
+       :desc (funcall kw "DESCRIPTION")
+       :publicavel (and (member nr/tag-publicar tags)
+                        (not (member nr/tag-privada tags))
+                        (not (nr/diretorio-proibido-p arquivo))
+                        t)
+       :palavras (count-words (point-min) (point-max))
+       :links-id (nr/--coletar "\\[\\[id:\\([^]:\n]+\\)" 1)
+       :links-arq (mapcar #'nr/--sem-ancora
+                          (append (nr/--coletar "\\[\\[file:\\([^]\n]+\\)\\]" 1)
+                                  (nr/--coletar "\\[\\[\\(\\.\\.?/[^]\n]+\\)\\]" 1)))))))
+
+;;;; Índice
+
+(defun nr/indice-construir ()
+  "Lê todo o vault e (re)constrói o índice. Devolve o hash de notas."
+  (interactive)
+  (let ((notas (make-hash-table :test 'equal))
+        (por-id (make-hash-table :test 'equal))
+        (backlinks (make-hash-table :test 'equal)))
+    (dolist (arq (nr/arquivos-org))
+      (let ((n (nr/nota-ler arq)))
+        (unless (equal (nr/nota-tipo n) "indice")
+          (puthash arq n notas)
+          (dolist (id (nr/nota-ids n))
+            (puthash id n por-id)))))
+    (maphash
+     (lambda (_ n)
+       (dolist (id (delete-dups (copy-sequence (nr/nota-links-id n))))
+         (when-let ((alvo (gethash id por-id)))
+           (unless (eq alvo n)
+             (cl-pushnew n (gethash (nr/nota-arquivo alvo) backlinks) :test #'eq)))))
+     notas)
+    (setq nr/indice notas
+          nr/indice--por-id por-id
+          nr/indice--backlinks backlinks)
+    (nr/--sincronizar-org-id)
+    (when (called-interactively-p 'interactive)
+      (message "Índice: %d notas, %d publicáveis"
+               (hash-table-count notas) (length (nr/notas t))))
+    notas))
+
+(defun nr/--sincronizar-org-id ()
+  "Informa ao org-id onde está cada :ID:, para links id: resolverem no export."
+  (require 'org-id)
+  (unless (hash-table-p org-id-locations)
+    (setq org-id-locations (make-hash-table :test 'equal)))
+  (maphash (lambda (id n) (puthash id (nr/nota-arquivo n) org-id-locations))
+           nr/indice--por-id))
+
+(defun nr/indice ()
+  "Hash de notas; constrói na primeira chamada."
+  (or nr/indice (nr/indice-construir)))
+
+(defun nr/notas (&optional so-publicaveis)
+  "Lista de notas ordenada por caminho; só as publicáveis se SO-PUBLICAVEIS."
+  (let (res)
+    (maphash (lambda (_ n)
+               (when (or (not so-publicaveis) (nr/nota-publicavel n))
+                 (push n res)))
+             (nr/indice))
+    (sort res (lambda (a b) (string< (nr/nota-rel a) (nr/nota-rel b))))))
+
+(defun nr/nota-por-arquivo (arquivo)
+  (gethash (expand-file-name arquivo) (nr/indice)))
+
+(defun nr/nota-por-id (id)
+  (nr/indice)
+  (gethash id nr/indice--por-id))
+
+(defun nr/backlinks (nota)
+  "Notas *publicáveis* que linkam para NOTA, em ordem de título."
+  (nr/indice)
+  (sort (seq-filter #'nr/nota-publicavel
+                    (gethash (nr/nota-arquivo nota) nr/indice--backlinks))
+        (lambda (a b) (string< (downcase (nr/nota-titulo a))
+                               (downcase (nr/nota-titulo b))))))
+
+(defun nr/url (nota)
+  "URL (relativa à raiz do site) da página HTML de NOTA."
+  (concat "/"
+          (mapconcat #'url-hexify-string
+                     (split-string (file-name-sans-extension (nr/nota-rel nota)) "/")
+                     "/")
+          ".html"))
+
+(defun nr/tags-visiveis (nota)
+  "Tags de NOTA sem a tag de publicação."
+  (remove nr/tag-publicar (nr/nota-tags nota)))
+
+(provide 'nr-index)
+;;; nr-index.el ends here
+#+end_src
+
+#+RESULTS:
+: nr-index
