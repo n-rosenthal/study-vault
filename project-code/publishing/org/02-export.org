@@ -332,7 +332,7 @@ Observações de configuração:
     (when (or html latex)
       (let* ((kw (org-collect-keywords
                   '("NOTE_TYPE" "TITLE" "DESCRIPTION" "STATUS" "FILETAGS" "AUTHOR")))
-             (tipo (downcase (or (cadr (assoc "NOTE_TYPE" kw)) "estudo")))
+             (tipo (nr/normalizar-tipo (cadr (assoc "NOTE_TYPE" kw))))
              (cfg (cdr (assoc tipo nr/tipos-de-nota)))
              (id (nr/--id-do-buffer))
              (nota (and id (nr/nota-por-id id))))
@@ -348,8 +348,7 @@ Observações de configuração:
 
 (defun nr/tipo-da-nota ()
   "Valor de #+NOTE_TYPE: do buffer atual (padrão \"estudo\")."
-  (downcase (or (cadr (assoc "NOTE_TYPE" (org-collect-keywords '("NOTE_TYPE"))))
-                "estudo")))
+  (nr/normalizar-tipo (cadr (assoc "NOTE_TYPE" (org-collect-keywords '("NOTE_TYPE"))))))
 
 (provide 'nr-export)
 ;;; nr-export.el ends here
