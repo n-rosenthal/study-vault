@@ -1,0 +1,34 @@
+:PROPERTIES:
+:ID:       fcc11fce-7d3b-453e-ab1d-95b5be67da17
+:END:
+#+TITLE: Métricas
+#+DATE: [2026-11-17 ter]
+#+DESCRIPTION: 
+#+STATUS: crescendo
+#+NOTE_TYPE: conceito
+#+FILETAGS: :concept:mathematics/general:computer-science/general:conceito:
+
+* Definição
+Uma métrica \( m \) é uma função quantitativa que busca /medir/ determinado /atributo/ de uma *entidade*, *processo*, *artefato* ou *sistema*:
+
+$$
+m : E \to V
+$$
+
+onde \( E \) é o *domínio das entidades* e \( V \) é o *domínio dos valores*. Normalmente, \( V \) assume valores inteiros ou reais, /i.e./, \( V = \mathbf{R} \) ou \( V = \mathbf{N} \).
+
+#+name: métricas--exemplos-em-computer-science
+#+begin_exemplo
+Em *Ciência da Computação*, algumas métricas comuns são /complexidade ciclomática/, /tempo de execução/, /taxa de erro/ e /cobertura de código/ (dentre muitas outras).
+#+end_exemplo
+
+Nos exemplos acima, e na definição apresentada, estamos aumentando a semântica de /métrica/ para além das definições em *espaços métricos*:
+
+#+ATTR_LATEX: :options [title={Observação}]
+#+begin_teorema
+O /conceito de métrica/ quando utilizado fora do domínio dos *espaços métricos* não necessita, obrigatoriamente, satisfazer todos os axiomas destes espaços.
+#+end_teorema
+
+* Veja também
+- =[Métrica em um Conjunto]= (ou /métrica espacial/, para a definição mais rigorosa em Matemática)
+- =[Métricas de Distância]=  (métricas para as quais os axiomas dos espaços métricos são necessários; utilizadas em Ciência da Computação: funções de distância que satisfazem os axiomas métricos, como aquelas utilizadas em /nearest-neighbor search/, /clustering/, relações de similariedade, /metric embeddings/ e outros.

@@ -1,0 +1,47 @@
+% Created 2026-11-17 ter 16:54
+% Intended LaTeX compiler: lualatex
+\documentclass[11pt,a4paper]{scrartcl}
+\usepackage{estudo}
+
+\usepackage{graphicx}
+\usepackage{longtable}
+\usepackage{wrapfig}
+\usepackage{capt-of}
+\usepackage[normalem]{ulem}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\author{Nicolas}
+\date{2026-11-17}
+\title{Métricas}
+\begin{document}
+
+\maketitle
+\tableofcontents
+
+\section{Definição}
+\label{sec:orgeed2053}
+Uma métrica \(m\) é uma função quantitativa que busca \emph{medir} determinado \emph{atributo} de uma \textbf{entidade}, \textbf{processo}, \textbf{artefato} ou \textbf{sistema}:
+
+$$
+m : E \to V
+$$
+
+onde \(E\) é o \textbf{domínio das entidades} e \(V\) é o \textbf{domínio dos valores}. Normalmente, \(V\) assume valores inteiros ou reais, \emph{i.e.}, \(V = \mathbf{R}\) ou \(V = \mathbf{N}\).
+
+\begin{exemplo}
+Em \textbf{Ciência da Computação}, algumas métricas comuns são \emph{complexidade ciclomática}, \emph{tempo de execução}, \emph{taxa de erro} e \emph{cobertura de código} (dentre muitas outras).
+\label{métricas--exemplos-em-computer-science}
+\end{exemplo}
+
+Nos exemplos acima, e na definição apresentada, estamos aumentando a semântica de \emph{métrica} para além das definições em \textbf{espaços métricos}:
+
+\begin{teorema}[title={Observação}]
+O \emph{conceito de métrica} quando utilizado fora do domínio dos \textbf{espaços métricos} não necessita, obrigatoriamente, satisfazer todos os axiomas destes espaços.
+\end{teorema}
+\section{Veja também}
+\label{sec:org8e99c4d}
+\begin{itemize}
+\item \texttt{[Métrica em um Conjunto]} (ou \emph{métrica espacial}, para a definição mais rigorosa em Matemática)
+\item \texttt{[Métricas de Distância]}  (métricas para as quais os axiomas dos espaços métricos são necessários; utilizadas em Ciência da Computação: funções de distância que satisfazem os axiomas métricos, como aquelas utilizadas em \emph{nearest-neighbor search}, \emph{clustering}, relações de similariedade, \emph{metric embeddings} e outros.
+\end{itemize}
+\end{document}
