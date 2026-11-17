@@ -1,5 +1,5 @@
 :PROPERTIES:
-:ID:       fcc11fce-7d3b-453e-ab1d-95b5be67da17
+:ID:       concept/general/metrics
 :END:
 #+TITLE: Métricas
 #+DATE: [2026-11-17 ter]
@@ -15,7 +15,7 @@ $$
 m : E \to V
 $$
 
-onde \( E \) é o *domínio das entidades* e \( V \) é o *domínio dos valores*. Normalmente, \( V \) assume valores inteiros ou reais, /i.e./, \( V = \mathbf{R} \) ou \( V = \mathbf{N} \).
+onde \( E \) é o *domínio das entidades* e \( V \) é o *domínio dos valores*. Normalmente, \( V \) assume valores inteiros ou reais, /i.e./, \( V = \mathbb{R} \) ou \( V = \mathbb{N} \).
 
 #+name: métricas--exemplos-em-computer-science
 #+begin_exemplo

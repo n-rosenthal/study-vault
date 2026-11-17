@@ -1,0 +1,174 @@
+#+TITLE: Resolução de exercício em Especificação Formal (Maude)
+#+SUBTITLE: Tipos, sortes e espécies (kinds)
+#+DATE: [2026-11-17 ter]
+#+DESCRIPTION: Estudo sobre determinação de tipos em Maude
+#+FILETAGS: :computer-science/formal-specification/exercise:estudo:publish:
+
+#+LATEX_CLASS: scrartcl
+#+LATEX_CLASS_OPTIONS: [11pt,a4paper]
+#+LATEX_HEADER: \usepackage{estudo}
+
+* Exercício
+Dadas dois fragmentos de especificação em Maude, devemos determinar os tipos de certos termos. Em Maude, um *tipo* é definido como um supersorte sobre *espécies* (ou /kinds/) e *sortes*.
+
+** Convenções e Regras
+#+begin_margem
+Em Maude, a espécie de um termo mal tipado é denotada por colchetes, como em \([Nat]\) ou \([Int]\).
+#+end_margem
+
+Neste documento, escrevemos \(s' \ll s\) para indicar que o sorte \(s'\) é subsorte de \(s\), isto é, que \(\mathbf{T}_{s'} \subseteq \mathbf{T}_{s}\). Escrevemos \(s' \not\ll s\) para indicar que \(s'\) não é subsorte de \(s\).
+
+Em Maude, o tipo de um termo pode ser:
+- um **sorte** \(s\), quando o termo é bem tipado e sua menor sorte é \(s\);
+- uma **espécie** \([s]\), quando o termo é mal tipado ou quando não há sorte suficiente para classificá-lo; nesse caso, toma-se o sorte máximo \(s\) do componente conectado relevante.
+
+As duas regras usadas nas resoluções são:
+
+**Regra (5) — sucesso de tipagem.**
+\[
+\frac{
+\mathrm{op}\ s_1 \cdots s_n \to s
+}{
+\mathrm{op}(s_1',\ldots,s_n') \to s
+}
+\qquad
+\text{se } s \in S \text{ e } s_i' \ll s_i \text{ para todo } i.
+\]
+
+**Regra (6) — termo mal tipado.**
+\[
+\frac{
+\mathrm{op}\ s_1 \cdots s_i \cdots s_n \to s
+}{
+\mathrm{op}(s_1',\ldots,s_i',\ldots,s_n') \to [s]
+}
+\qquad
+\text{se } s \in S \text{ e, para algum } i,\ s_i' \not\ll s_i.
+\]
+
+** Fragmentos de Especificações
+
+#+begin_src maude
+fmod ESPECIE1 is
+  protecting NAT .
+  op op_ : NzNat -> Nat .
+endfm
+#+end_src
+
+Na especificação `ESPECIE1`, estamos importando os números naturais através de `protecting NAT.` e definindo uma operação que recebe um argumento do sorte `NzNat` (naturais com exceção do zero) e produz um termo do sorte `Nat` (natural qualquer, inclusive o zero).
+
+#+begin_src maude
+fmod ESPECIE2 is
+  protecting INT .
+  op op_ : NzNat -> Int .
+endfm
+#+end_src
+
+Na especificação `ESPECIE2`, importamos os números inteiros através de `protecting INT.`. A operação recebe um termo de `NzNat` e retorna um número inteiro (um termo do sorte `Int`).
+
+** Termos a analisar
+Devemos determinar os tipos dos termos `op -3`, `op 0` e `op 3`.
+
+** Determinação dos Tipos
+
+*** Em `ESPECIE1`
+1. **`op -3`**: O termo é uma /erro sintático/. O Maude retorna `didn't expect token -3`. 
+   Isso ocorre porque os números negativos não são definidos em `NAT`, que importamos para `ESPECIE1`. Portanto, `-3` não é um termo bem-formado e não possui tipo.
+   
+   \[
+   \boxed{\texttt{op -3}: \text{erro sintático; não há tipo.}}
+   \]
+
+2. **`op 0`**: Tipo *espécie* `[Nat]`. 
+   A operação `op_` é definida para o parâmetro `NzNat`, portanto não é possível aplicá-la sobre zero. Seu tipo é a espécie `[Nat]`. Para descobrirmos qual sorte deverá ser tomado para formar a espécie de um termo "errado", devemos encontrar o sorte *máximo* do componente conectado da especificação `NAT`, que é `Nat`.
+   
+   Pelas regras, temos:
+   1. \( \text{Zero} \not\ll \text{NzNat} \) (zero não está contido em non-zero naturals); e
+   2. Regra (6).
+   
+   \[
+   \boxed{\texttt{op 0} : [\textit{Nat}].}
+   \]
+
+3. **`op 3`**: Tipo *sorte* `Nat`. 
+   Este é o caso de sucesso da operação. `op_` recebe um natural distinto de zero (`3: NzNat`) e retornará um natural (`op 3: Nat`).
+   
+   Pelas regras, temos:
+   1. \( 3 : \text{NzNat} \);
+   2. \( \text{NzNat} \ll \text{NzNat} \), por reflexividade; e
+   3. Regra (5).
+   
+   \[
+   \boxed{\texttt{op 3} : \textit{Nat}.}
+   \]
+
+*** Em `ESPECIE2`
+1. **`op -3`**: Tipo *espécie* `[Int]`. 
+   Diferente de `ESPECIE1`, em `ESPECIE2` os números negativos estão definidos (importamos `INT`), logo não há erro de sintaxe. A operação `op_` recebe um non-zero natural e retorna um inteiro. Estamos tentando passar um inteiro para uma operação que espera um natural distinto do zero. Por ser um termo mal tipado, seu tipo será a espécie inteiro.
+   
+   Pelas regras, temos:
+   1. \( -3 : \text{Int} \);
+   2. \( \text{Int} \not\ll \text{NzNat} \).
+   
+   \[
+   \boxed{\texttt{op -3} : [\textit{Int}].}
+   \]
+
+2. **`op 0`**: Tipo *espécie* `[Int]`. 
+   A operação `op_` é definida para parâmetro `NzNat`, portanto não é possível aplicá-la sobre zero. Esta é a mesma situação que encontramos em `ESPECIE1`.
+   
+   Pelas regras, temos:
+   1. \( 0 : \text{Zero} \); e
+   2. \( \text{Zero} \not\ll \text{NzNat} \).
+   
+   \[
+   \boxed{\texttt{op 0} : [\textit{Int}].}
+   \]
+
+3. **`op 3`**: Tipo *sorte* `Int`. 
+   Este é o caso de sucesso. `op_` recebe um natural distinto de zero (`3: NzNat`) e retornará um inteiro (`op 3: Int`).
+   
+   Pelas regras, temos:
+   1. \( 3 : \text{NzNat} \);
+   2. \( \text{NzNat} \ll \text{NzNat} \), por reflexividade; e
+   3. Regra (5).
+   
+   \[
+   \boxed{\texttt{op 3} : \textit{Int}.}
+   \]
+
+* Exercício Seguinte
+O exercício seguinte é interessante pois, diferente do anterior, temos aqui as *equações* que definem a operação.
+
+** Fragmento de Especificação
+
+#+begin_src maude
+protecting INT .
+op _op_ : Nat NzNat -> Int .
+var n : Nat .
+var i : Int .
+eq 2 op 3 = 2 .
+eq 3 op 5 = 0 .
+#+end_src
+
+Este fragmento importa os números inteiros e define uma operação `_ op _` de parâmetros `Nat` e `NzNat` (o primeiro parâmetro deve ser um natural qualquer, enquanto o segundo deve ser um non-zero natural). A operação retorna um inteiro. 
+
+A operação é definida por duas equações:
+\[
+\mathbf{eq}\ 2\ \text{op}\ 3 = 2 \qquad \mathbf{eq}\ 3\ \text{op}\ 5 = 0
+\]
+
+Para quaisquer outros pares de parâmetros distintos de \((2, 3)\) e \((3, 5)\), a redução de `_ op _` não é definida pelas equações.
+
+** Tabela de Determinação dos Tipos
+#+ATTR_LATEX: :environment tabularx :width \textwidth :align llllX
+| Termo     | Tipo    | Resultado   | Tipo    | Comentário e Resolução                                                                         |
+|-----------+---------+-------------+---------+------------------------------------------------------------------------------------------------|
+| ~-4 op 3~ | ~[Int]~ | ~-4 op 3~   | ~[Int]~ | \(Int \not\ll Nat\). O primeiro argumento deveria ser `Nat`, mas é `Int`. Operação não definida.  |
+| ~2 op 0~  | ~[Int]~ | ~2 op 0~    | ~[Int]~ | \(Zero \not\ll NzNat\). O segundo argumento deveria ser `NzNat`. Operação não definida.         |
+| ~0 op 5~  | =Int=   | ~0 op 5~    | =Int=   | É um termo correto e bem tipado. Não reduz porque \((0, 5)\) não tem equação.                  |
+| ~5 op 8~  | =Int=   | ~5 op 8~    | =Int=   | É um termo correto e bem tipado. Não reduz porque \((5, 8)\) não tem equação.                  |
+| ~2 op 3~  | =Int=   | ~2~         | =NzNat= | Reduz pela equação 1. Sorte mínimo de `2` é `NzNat`.                                           |
+| ~3 op 5~  | =Int=   | ~0~         | =Zero=  | Reduz pela equação 2. Sorte mínimo de `0` é `Zero`.                                            |
+| ~n op 3~  | =Int=   | ~n op 3~    | =Int=   | `n` é uma variável `Nat`, `3` é `NzNat`. Termo bem tipado, mas sem equação aplicável.          |
+| ~i op 2~  | ~[Int]~ | ~i op 2~    | ~[Int]~ | \(Int \not\ll Nat\). `i` é variável `Int` e não serve como primeiro argumento.                 |
