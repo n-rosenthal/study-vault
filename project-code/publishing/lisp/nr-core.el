@@ -96,6 +96,27 @@ O ox-publish compara o :exclude com o caminho *relativo* à raiz do projeto
 
 ;;;; Texto
 
+(defconst nr/sinonimos-tipo
+  '(("study" . "estudo") ("synthesis" . "sintese") ("journal" . "diario")
+    ("síntese" . "sintese") ("diário" . "diario"))
+  "Nomes alternativos de #+NOTE_TYPE: e seu nome canônico.")
+
+(defconst nr/sinonimos-status
+  '(("seed" . "semente") ("growing" . "crescendo") ("mature" . "madura")
+    ("evergreen" . "madura"))
+  "Nomes alternativos de #+STATUS: e seu nome canônico.")
+
+(defun nr/normalizar-tipo (tipo)
+  "TIPO em minúsculas, com sinônimos (study, journal...) trocados pelo canônico."
+  (let ((tipo (downcase (string-trim (or tipo "estudo")))))
+    (or (cdr (assoc tipo nr/sinonimos-tipo)) tipo)))
+
+(defun nr/normalizar-status (status)
+  "STATUS em minúsculas com sinônimos trocados pelo canônico; nil se vazio."
+  (when (and status (not (string-empty-p (string-trim status))))
+    (let ((s (downcase (string-trim status))))
+      (or (cdr (assoc s nr/sinonimos-status)) s))))
+
 (defun nr/escapar-html (texto)
   "Escapa TEXTO para uso em HTML/XML, inclusive em atributos."
   (let ((s (or texto "")))

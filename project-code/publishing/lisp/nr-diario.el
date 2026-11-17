@@ -43,7 +43,7 @@
                (let ((inicio (point)))
                  ;; sub-headings de uma entrada já capturada não contam de novo
                  (when (>= inicio ultimo-fim)
-                   (when-let ((tempo (nr/diario-data-da-entrada)))
+                   (when-let* ((tempo (nr/diario-data-da-entrada)))
                      (when (<= ini tempo fim)
                        (let ((fim-sub (save-excursion (org-end-of-subtree t t) (point))))
                          (push (cons tempo (buffer-substring-no-properties inicio fim-sub))

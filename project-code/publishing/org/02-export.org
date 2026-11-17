@@ -227,7 +227,7 @@ Observações de configuração:
         linhas)
     (cond
      ((org-export-derived-backend-p backend 'latex)
-      (when-let ((classe (plist-get cfg :latex)))
+      (when-let* ((classe (plist-get cfg :latex)))
         (push (format "#+LATEX_CLASS: %s" classe) linhas))
       ;; URL da versão web (usada pelo QR code do estudo.sty). Os catcodes
       ;; deixam %, _ e # passarem sem escape.
@@ -239,7 +239,7 @@ Observações de configuração:
       ;; O #+HTML_HEAD: de um arquivo *substitui* o :html-head do projeto
       ;; (não soma), então o CSS base também entra por aqui.
       (push "#+HTML_HEAD: <link rel=\"stylesheet\" href=\"/css/site.css\">" linhas)
-      (when-let ((css (plist-get cfg :css)))
+      (when-let* ((css (plist-get cfg :css)))
         (push (format "#+HTML_HEAD: <link rel=\"stylesheet\" href=\"/css/%s\">" css) linhas))
       (push (format "#+HTML_HEAD: <link rel=\"alternate\" type=\"application/atom+xml\" title=\"%s\" href=\"/feed.xml\">"
                     (nr/escapar-html nr/titulo-do-site))
@@ -247,11 +247,11 @@ Observações de configuração:
       (push "#+HTML_HEAD: <script defer src=\"/js/grafo-local.js\"></script>" linhas)
       (unless (equal tipo "indice")
         (push "#+HTML_HEAD: <meta property=\"og:type\" content=\"article\">" linhas)
-        (when-let ((titulo (funcall val "TITLE")))
+        (when-let* ((titulo (funcall val "TITLE")))
           (push (format "#+HTML_HEAD: <meta property=\"og:title\" content=\"%s\">"
                         (nr/escapar-html titulo))
                 linhas))
-        (when-let ((desc (funcall val "DESCRIPTION")))
+        (when-let* ((desc (funcall val "DESCRIPTION")))
           (push (format "#+HTML_HEAD: <meta property=\"og:description\" content=\"%s\">"
                         (nr/escapar-html desc))
                 linhas))
@@ -265,7 +265,7 @@ Observações de configuração:
                   linhas)
             (push "#+HTML_HEAD: <meta name=\"twitter:card\" content=\"summary_large_image\">"
                   linhas))))))
-    (when-let ((op (plist-get cfg :opcoes)))
+    (when-let* ((op (plist-get cfg :opcoes)))
       (push (concat "#+OPTIONS: " op) linhas))
     (unless (funcall val "AUTHOR")      ; sem isso o Org usa `user-full-name'
       (push (concat "#+AUTHOR: " nr/autor) linhas))
@@ -353,6 +353,9 @@ Observações de configuração:
 (provide 'nr-export)
 ;;; nr-export.el ends here
 #+end_src
+
+#+RESULTS:
+: nr-export
 
 * Estilos LaTeX
 
@@ -547,7 +550,7 @@ Comandos: =M-x nr/exportar-diario= (pergunta "De" e "Até") e
                (let ((inicio (point)))
                  ;; sub-headings de uma entrada já capturada não contam de novo
                  (when (>= inicio ultimo-fim)
-                   (when-let ((tempo (nr/diario-data-da-entrada)))
+                   (when-let* ((tempo (nr/diario-data-da-entrada)))
                      (when (<= ini tempo fim)
                        (let ((fim-sub (save-excursion (org-end-of-subtree t t) (point))))
                          (push (cons tempo (buffer-substring-no-properties inicio fim-sub))

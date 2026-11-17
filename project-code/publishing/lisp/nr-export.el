@@ -165,7 +165,7 @@
         linhas)
     (cond
      ((org-export-derived-backend-p backend 'latex)
-      (when-let ((classe (plist-get cfg :latex)))
+      (when-let* ((classe (plist-get cfg :latex)))
         (push (format "#+LATEX_CLASS: %s" classe) linhas))
       ;; URL da versão web (usada pelo QR code do estudo.sty). Os catcodes
       ;; deixam %, _ e # passarem sem escape.
@@ -177,7 +177,7 @@
       ;; O #+HTML_HEAD: de um arquivo *substitui* o :html-head do projeto
       ;; (não soma), então o CSS base também entra por aqui.
       (push "#+HTML_HEAD: <link rel=\"stylesheet\" href=\"/css/site.css\">" linhas)
-      (when-let ((css (plist-get cfg :css)))
+      (when-let* ((css (plist-get cfg :css)))
         (push (format "#+HTML_HEAD: <link rel=\"stylesheet\" href=\"/css/%s\">" css) linhas))
       (push (format "#+HTML_HEAD: <link rel=\"alternate\" type=\"application/atom+xml\" title=\"%s\" href=\"/feed.xml\">"
                     (nr/escapar-html nr/titulo-do-site))
@@ -185,11 +185,11 @@
       (push "#+HTML_HEAD: <script defer src=\"/js/grafo-local.js\"></script>" linhas)
       (unless (equal tipo "indice")
         (push "#+HTML_HEAD: <meta property=\"og:type\" content=\"article\">" linhas)
-        (when-let ((titulo (funcall val "TITLE")))
+        (when-let* ((titulo (funcall val "TITLE")))
           (push (format "#+HTML_HEAD: <meta property=\"og:title\" content=\"%s\">"
                         (nr/escapar-html titulo))
                 linhas))
-        (when-let ((desc (funcall val "DESCRIPTION")))
+        (when-let* ((desc (funcall val "DESCRIPTION")))
           (push (format "#+HTML_HEAD: <meta property=\"og:description\" content=\"%s\">"
                         (nr/escapar-html desc))
                 linhas))
@@ -203,7 +203,7 @@
                   linhas)
             (push "#+HTML_HEAD: <meta name=\"twitter:card\" content=\"summary_large_image\">"
                   linhas))))))
-    (when-let ((op (plist-get cfg :opcoes)))
+    (when-let* ((op (plist-get cfg :opcoes)))
       (push (concat "#+OPTIONS: " op) linhas))
     (unless (funcall val "AUTHOR")      ; sem isso o Org usa `user-full-name'
       (push (concat "#+AUTHOR: " nr/autor) linhas))
@@ -270,7 +270,7 @@
     (when (or html latex)
       (let* ((kw (org-collect-keywords
                   '("NOTE_TYPE" "TITLE" "DESCRIPTION" "STATUS" "FILETAGS" "AUTHOR")))
-             (tipo (downcase (or (cadr (assoc "NOTE_TYPE" kw)) "estudo")))
+             (tipo (nr/normalizar-tipo (cadr (assoc "NOTE_TYPE" kw))))
              (cfg (cdr (assoc tipo nr/tipos-de-nota)))
              (id (nr/--id-do-buffer))
              (nota (and id (nr/nota-por-id id))))
@@ -286,8 +286,7 @@
 
 (defun nr/tipo-da-nota ()
   "Valor de #+NOTE_TYPE: do buffer atual (padrão \"estudo\")."
-  (downcase (or (cadr (assoc "NOTE_TYPE" (org-collect-keywords '("NOTE_TYPE"))))
-                "estudo")))
+  (nr/normalizar-tipo (cadr (assoc "NOTE_TYPE" (org-collect-keywords '("NOTE_TYPE"))))))
 
 (provide 'nr-export)
 ;;; nr-export.el ends here

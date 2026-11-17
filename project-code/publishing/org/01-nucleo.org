@@ -323,7 +323,7 @@ fora do índice.
     (maphash
      (lambda (_ n)
        (dolist (id (delete-dups (copy-sequence (nr/nota-links-id n))))
-         (when-let ((alvo (gethash id por-id)))
+         (when-let* ((alvo (gethash id por-id)))
            (unless (eq alvo n)
              (cl-pushnew n (gethash (nr/nota-arquivo alvo) backlinks) :test #'eq)))))
      notas)

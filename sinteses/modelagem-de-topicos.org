@@ -1,0 +1,17 @@
+:PROPERTIES:
+:ID:       7fad04c9-612e-4ebc-8853-96912575815f
+:END:
+#+TITLE: Modelagem de Tópicos
+#+DATE: [2026-11-17 ter]
+#+DESCRIPTION: 
+#+STATUS: semente
+#+NOTE_TYPE: sintese
+#+FILETAGS: :study:sintese:
+
+* Notas de estudo
+#+BEGIN: notas-por-tag :tag "study" :tipo "estudo" :resumo t
+#+END:
+
+* Relacionadas
+#+BEGIN: notas-relacionadas :limite 5
+#+END:

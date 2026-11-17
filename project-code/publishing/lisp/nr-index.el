@@ -79,12 +79,12 @@
        :titulo (or (funcall kw "TITLE") (file-name-base arquivo))
        :id id-arquivo
        :ids (nreverse ids)
-       :tipo (downcase (or (funcall kw "NOTE_TYPE") "estudo"))
+       :tipo (nr/normalizar-tipo (funcall kw "NOTE_TYPE"))
        :tags tags
        :data (or (nr/data-curta (funcall kw "DATE"))
                  (format-time-string
                   "%Y-%m-%d" (file-attribute-modification-time (file-attributes arquivo))))
-       :status (let ((s (funcall kw "STATUS"))) (and s (downcase s)))
+       :status (nr/normalizar-status (funcall kw "STATUS"))
        :desc (funcall kw "DESCRIPTION")
        :publicavel (and (member nr/tag-publicar tags)
                         (not (member nr/tag-privada tags))
@@ -113,7 +113,7 @@
     (maphash
      (lambda (_ n)
        (dolist (id (delete-dups (copy-sequence (nr/nota-links-id n))))
-         (when-let ((alvo (gethash id por-id)))
+         (when-let* ((alvo (gethash id por-id)))
            (unless (eq alvo n)
              (cl-pushnew n (gethash (nr/nota-arquivo alvo) backlinks) :test #'eq)))))
      notas)

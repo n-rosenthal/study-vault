@@ -7,6 +7,7 @@
 (require 'nr-core)
 (require 'org-id)
 (require 'ucs-normalize)
+(require 'nr-diario)
 
 (defconst nr/modelos
   '(("estudo"  :dir "estudos/"  :status t   :corpo nr/--corpo-estudo)
@@ -26,7 +27,7 @@
             "#+BEGIN: notas-relacionadas :limite 5\n"
             "#+END:\n")))
 
-(defun nr/--corpo-diario (_tags) "* ")
+(defun nr/--corpo-diario (_tags) "")
 
 (defun nr/cabecalho (tipo titulo &rest plist)
   "Texto do cabeçalho de uma nota de TIPO com TITULO.
@@ -64,9 +65,11 @@ e :publicar (non-nil adiciona a tag de publicação)."
 (defun nr/criar-nota (tipo titulo &rest plist)
   "Cria o arquivo de uma nota nova e devolve o caminho. PLIST: `nr/cabecalho'."
   (let* ((cfg (cdr (assoc tipo nr/modelos)))
-         (dir (expand-file-name (plist-get cfg :dir) nr/vault))
+         (dir (if (equal tipo "diario")
+                  nr/diario-dir
+                (expand-file-name (plist-get cfg :dir) nr/vault)))
          (base (if (equal tipo "diario")
-                   (format-time-string "%Y-%m")
+                   (or (plist-get plist :data) (format-time-string "%Y-%m-%d"))
                  (nr/--slug titulo)))
          (arq (expand-file-name (concat base ".org") dir)))
     (when (string-empty-p base) (user-error "Título inválido: %S" titulo))
@@ -87,6 +90,71 @@ e :publicar (non-nil adiciona a tag de publicação)."
          (split-string (read-string "Tags (separadas por espaço): ") " " t)
          (y-or-n-p "Publicar no site? ")))
   (find-file (nr/criar-nota tipo titulo :tags tags :publicar publicar)))
+
+;;;###autoload
+(defun nr/nova-nota-estudo (titulo &optional tags)
+  "Cria uma nota de estudo privada com TITULO e a abre.
+Com prefixo (\\[universal-argument]) pergunta também se ela é publicada."
+  (interactive
+   (list (read-string "Título: ")
+         (split-string (read-string "Tags (espaço): ") " " t)))
+  (find-file (nr/criar-nota "estudo" titulo :tags tags
+                            :publicar (and current-prefix-arg
+                                           (y-or-n-p "Publicar no site? ")))))
+
+(defun nr/--entrada-diario (&optional titulo data)
+  "Texto de uma entrada nova do diário; :CREATED: é DATA (padrão hoje) + hora."
+  (format "* %s%s\n:PROPERTIES:\n:CREATED:  %s\n:END:\n\n"
+          (format-time-string "%H:%M")
+          (if (and titulo (not (string-empty-p titulo))) (concat " — " titulo) "")
+          (format-time-string
+           "[%Y-%m-%d %a %H:%M]"
+           (date-to-time (concat (or data (format-time-string "%Y-%m-%d"))
+                                 (format-time-string " %H:%M:%S"))))))
+
+;;;###autoload
+(defun nr/nova-nota-diario (&optional data titulo)
+  "Abre o diário do dia DATA (AAAA-MM-DD; padrão hoje) e inicia uma entrada.
+O arquivo é `nr/diario-dir'/AAAA-MM-DD.org; se já existe, só acrescenta
+uma entrada com a hora atual. Com prefixo, pergunta a data."
+  (interactive
+   (list (when current-prefix-arg (org-read-date nil nil nil "Data: "))
+         (read-string "Título da entrada (opcional): ")))
+  (let* ((data (or data (format-time-string "%Y-%m-%d")))
+         (arq (expand-file-name (concat data ".org") nr/diario-dir)))
+    (unless (file-exists-p arq)
+      (nr/criar-nota "diario" data :data data))
+    (find-file arq)
+    (goto-char (point-max))
+    (unless (bolp) (insert "\n"))
+    (insert (nr/--entrada-diario titulo data))
+    (save-buffer)))
+
+;;;; Atalhos e org-capture
+
+(defvar nr/mapa-nova (make-sparse-keymap) "Atalhos para criar notas.")
+(define-key nr/mapa-nova (kbd "e") #'nr/nova-nota-estudo)
+(define-key nr/mapa-nova (kbd "d") #'nr/nova-nota-diario)
+(define-key nr/mapa-nova (kbd "n") #'nr/nova-nota)
+
+(defun nr/instalar-atalhos (&optional prefixo)
+  "Liga PREFIXO (padrão \"C-c n\") ao mapa: e = estudo, d = diário, n = qualquer."
+  (global-set-key (kbd (or prefixo "C-c n")) nr/mapa-nova))
+
+(defun nr/capture-diario ()
+  "Para `org-capture': vai ao diário de hoje (criando-o) e posiciona no fim."
+  (let ((arq (expand-file-name (format-time-string "%Y-%m-%d.org") nr/diario-dir)))
+    (unless (file-exists-p arq)
+      (nr/criar-nota "diario" (format-time-string "%Y-%m-%d")))
+    (set-buffer (find-file-noselect arq))
+    (goto-char (point-max))))
+
+(defun nr/capture-templates ()
+  "Modelo de `org-capture' para uma entrada de diário (tecla \"d\").
+Uso: (add-to-list \='org-capture-templates (car (nr/capture-templates)))."
+  (list `("d" "Entrada de diário" plain (function nr/capture-diario)
+          ,(concat "* %<%H:%M> — %?\n:PROPERTIES:\n:CREATED:  %U\n:END:\n")
+          :empty-lines-before 1 :unnarrowed t)))
 
 (provide 'nr-template)
 ;;; nr-template.el ends here

@@ -117,11 +117,17 @@ window.addEventListener('DOMContentLoaded', function () {
      "#+begin_export html\n<div data-pagefind-ignore>\n#+end_export\n"
      (mapconcat
       (lambda (grupo)
-        (let ((itens (seq-filter (lambda (n) (equal (nr/nota-tipo n) (car grupo))) notas)))
+        (let ((itens (seq-filter
+                      (lambda (n)
+                        (if (car grupo)
+                            (equal (nr/nota-tipo n) (car grupo))
+                          ;; "Outras": nada fica escondido por causa de um tipo inesperado
+                          (not (member (nr/nota-tipo n) '("sintese" "estudo")))))
+                      notas)))
           (when itens
             (concat "* " (cdr grupo) "\n"
                     (mapconcat #'nr/--item-do-indice itens "\n") "\n\n"))))
-      '(("sintese" . "Sínteses") ("estudo" . "Estudos"))
+      '(("sintese" . "Sínteses") ("estudo" . "Estudos") (nil . "Outras"))
       "")
      "#+begin_export html\n</div>\n#+end_export\n")))
 

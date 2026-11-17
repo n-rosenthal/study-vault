@@ -1,0 +1,20 @@
+:PROPERTIES:
+:ID:       52297060-7be6-49a1-902c-7ab471077a7e
+:END:
+#+TITLE: Processamento de Linguagem Natural
+#+DATE: [2026-11-17 ter]
+#+DESCRIPTION: 
+#+STATUS: semente
+#+NOTE_TYPE: sintese
+#+FILETAGS: :natural-language-processing:sintese:
+
+* Notas de estudo
+#+BEGIN: notas-por-tag :tag "natural-language-processing" :tipo "estudo" :resumo t
+#+END:
+
+* Relacionadas
+#+BEGIN: notas-relacionadas :limite 5
+#+END:
+
+
+

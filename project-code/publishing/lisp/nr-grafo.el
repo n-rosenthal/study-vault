@@ -25,7 +25,7 @@
             nos))
     (dolist (n notas)
       (dolist (id (delete-dups (copy-sequence (nr/nota-links-id n))))
-        (when-let ((alvo (nr/nota-por-id id)))
+        (when-let* ((alvo (nr/nota-por-id id)))
           (when (and (nr/nota-publicavel alvo) (not (eq alvo n)))
             (let* ((a (nr/grafo-id n))
                    (b (nr/grafo-id alvo))

@@ -179,7 +179,7 @@ de notas ligadas por =[[id:...]]= (em qualquer direção, sem duplicar).
             nos))
     (dolist (n notas)
       (dolist (id (delete-dups (copy-sequence (nr/nota-links-id n))))
-        (when-let ((alvo (nr/nota-por-id id)))
+        (when-let* ((alvo (nr/nota-por-id id)))
           (when (and (nr/nota-publicavel alvo) (not (eq alvo n)))
             (let* ((a (nr/grafo-id n))
                    (b (nr/grafo-id alvo))
@@ -207,6 +207,9 @@ de notas ligadas por =[[id:...]]= (em qualquer direção, sem duplicar).
 (provide 'nr-grafo)
 ;;; nr-grafo.el ends here
 #+end_src
+
+#+RESULTS:
+: nr-grafo
 
 * =nr-site.el=
 
@@ -504,7 +507,7 @@ O ox-publish compara o :exclude com caminhos *relativos* ao vault."
 (defun nr/indexar-busca ()
   "Roda o Pagefind sobre o site gerado (configuração em pagefind.yml)."
   (interactive)
-  (if-let ((npx (executable-find "npx")))
+  (if-let* ((npx (executable-find "npx")))
       (let ((default-directory nr/projeto-dir))
         (message "Indexando a busca (Pagefind %s)..." nr/pagefind-versao)
         (unless (zerop (call-process npx nil "*nr-pagefind*" nil
