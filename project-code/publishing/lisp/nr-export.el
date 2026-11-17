@@ -14,10 +14,13 @@
 ;;;; Tipos de nota
 
 (defconst nr/tipos-de-nota
-  '(("estudo"  :latex "notas-estudo" :css "estudo.css"  :opcoes nil)
-    ("sintese" :latex "sintese"      :css "sintese.css" :opcoes "toc:3")
-    ("diario"  :latex "diario"       :css nil           :opcoes "toc:nil num:nil")
-    ("indice"  :latex nil            :css nil           :opcoes nil))
+  '(
+    ("conceito"  :latex "notas-estudo" :css "estudo.css"  :opcoes nil)
+    ("estudo"    :latex "notas-estudo" :css "estudo.css"  :opcoes nil)
+    ("sintese"   :latex "sintese"      :css "sintese.css" :opcoes "toc:3")
+    ("diario"    :latex "diario"       :css nil           :opcoes "toc:nil num:nil")
+    ("indice"    :latex nil            :css nil           :opcoes nil)
+    )
   "Configuração de export por valor de #+NOTE_TYPE:.")
 
 (defconst nr/classes-latex

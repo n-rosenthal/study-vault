@@ -42,7 +42,10 @@
 (defun nr/og-svg (nota)
   "Texto SVG do cartão de NOTA."
   (let* ((tipo (nr/nota-tipo nota))
-         (cor (if (equal tipo "sintese") "#2e7d4f" "#1f4e8c"))
+         (cor (pcase tipo
+                ("sintese"  "#2e7d4f")
+                ("conceito" "#6a3d9a")
+                (_          "#1f4e8c")))
          (rotulo (upcase (string-join (delq nil (list tipo (nr/nota-status nota))) " · ")))
          (linhas (nr/--quebrar-linhas (nr/nota-titulo nota) 24 3))
          (tags (mapconcat (lambda (tg) (concat "#" tg))

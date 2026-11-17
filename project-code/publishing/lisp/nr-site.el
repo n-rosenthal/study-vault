@@ -122,12 +122,15 @@ window.addEventListener('DOMContentLoaded', function () {
                         (if (car grupo)
                             (equal (nr/nota-tipo n) (car grupo))
                           ;; "Outras": nada fica escondido por causa de um tipo inesperado
-                          (not (member (nr/nota-tipo n) '("sintese" "estudo")))))
+                          (not (member (nr/nota-tipo n) '("sintese" "estudo" "conceito")))))
                       notas)))
           (when itens
             (concat "* " (cdr grupo) "\n"
                     (mapconcat #'nr/--item-do-indice itens "\n") "\n\n"))))
-      '(("sintese" . "Sínteses") ("estudo" . "Estudos") (nil . "Outras"))
+      '(("sintese" . "Sínteses") 
+        ("estudo" . "Estudos") 
+        ("conceito" . "Conceitos") 
+        (nil . "Outras"))
       "")
      "#+begin_export html\n</div>\n#+end_export\n")))
 
@@ -270,7 +273,7 @@ O ox-publish compara o :exclude com caminhos *relativos* ao vault."
 (defun nr/indexar-busca ()
   "Roda o Pagefind sobre o site gerado (configuração em pagefind.yml)."
   (interactive)
-  (if-let ((npx (executable-find "npx")))
+  (if-let* ((npx (executable-find "npx")))
       (let ((default-directory nr/projeto-dir))
         (message "Indexando a busca (Pagefind %s)..." nr/pagefind-versao)
         (unless (zerop (call-process npx nil "*nr-pagefind*" nil

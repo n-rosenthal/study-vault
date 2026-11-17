@@ -10,10 +10,16 @@
 (require 'nr-diario)
 
 (defconst nr/modelos
-  '(("estudo"  :dir "estudos/"  :status t   :corpo nr/--corpo-estudo)
-    ("sintese" :dir "sinteses/" :status t   :corpo nr/--corpo-sintese)
-    ("diario"  :dir "diario/"   :status nil :corpo nr/--corpo-diario))
+  '(
+    ("conceito" :dir "estudo/conceitos/"  :status t   :corpo nr/--corpo-conceito)
+    ("estudo"   :dir "estudos/"           :status t   :corpo nr/--corpo-estudo)
+    ("sintese"  :dir "sinteses/"          :status t   :corpo nr/--corpo-sintese)
+    ("diario"   :dir "diario/"            :status nil :corpo nr/--corpo-diario)
+    )
   "Modelos por #+NOTE_TYPE: diretório, se leva #+STATUS: e função do corpo.")
+
+(defun nr/--corpo-conceito (_tags)
+  (concat "* Definição\n\n* Intuição\n\n* Exemplos\n\n* Veja também\n"))
 
 (defun nr/--corpo-estudo (_tags)
   (concat "* Ideia central\n\n* Detalhes\n\n* Exemplos\n\n* Perguntas em aberto\n"))
@@ -99,6 +105,17 @@ Com prefixo (\\[universal-argument]) pergunta também se ela é publicada."
    (list (read-string "Título: ")
          (split-string (read-string "Tags (espaço): ") " " t)))
   (find-file (nr/criar-nota "estudo" titulo :tags tags
+                            :publicar (and current-prefix-arg
+                                           (y-or-n-p "Publicar no site? ")))))
+
+;;;###autoload
+(defun nr/nova-nota-conceito (titulo &optional tags)
+  "Cria uma nota de conceito privada com TITULO e a abre.
+Com prefixo (\\[universal-argument]) pergunta também se ela é publicada."
+  (interactive
+   (list (read-string "Título: ")
+         (split-string (read-string "Tags (espaço): ") " " t)))
+  (find-file (nr/criar-nota "conceito" titulo :tags tags
                             :publicar (and current-prefix-arg
                                            (y-or-n-p "Publicar no site? ")))))
 

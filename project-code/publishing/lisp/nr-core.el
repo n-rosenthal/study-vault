@@ -97,8 +97,14 @@ O ox-publish compara o :exclude com o caminho *relativo* à raiz do projeto
 ;;;; Texto
 
 (defconst nr/sinonimos-tipo
-  '(("study" . "estudo") ("synthesis" . "sintese") ("journal" . "diario")
-    ("síntese" . "sintese") ("diário" . "diario"))
+  '(
+    ("concept" . "conceito") 
+    ("study" . "estudo") 
+    ("synthesis" . "sintese") 
+    ("journal" . "diario") 
+    ("síntese" . "sintese") 
+    ("diário" . "diario") 
+    )
   "Nomes alternativos de #+NOTE_TYPE: e seu nome canônico.")
 
 (defconst nr/sinonimos-status

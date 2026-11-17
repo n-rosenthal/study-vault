@@ -8,7 +8,7 @@
 (require 'nr-index)
 (require 'nr-sinteses)
 
-(defconst nr/tags-genericas '("estudo" "sintese" "diario"))
+(defconst nr/tags-genericas '("conceito" "estudo" "sintese" "diario"))
 
 (defun nr/--tags-relevantes (nota)
   (seq-remove (lambda (tg) (or (equal tg nr/tag-publicar) (member tg nr/tags-genericas)))

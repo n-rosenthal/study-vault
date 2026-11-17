@@ -333,7 +333,7 @@ window.addEventListener('DOMContentLoaded', function () {
   });
 });
 </script>
-#+end_export
+,#+end_export
 ")
 
 (defun nr/--item-do-indice (nota)
@@ -359,12 +359,15 @@ window.addEventListener('DOMContentLoaded', function () {
                         (if (car grupo)
                             (equal (nr/nota-tipo n) (car grupo))
                           ;; "Outras": nada fica escondido por causa de um tipo inesperado
-                          (not (member (nr/nota-tipo n) '("sintese" "estudo")))))
+                          (not (member (nr/nota-tipo n) '("sintese" "estudo" "conceito")))))
                       notas)))
           (when itens
             (concat "* " (cdr grupo) "\n"
                     (mapconcat #'nr/--item-do-indice itens "\n") "\n\n"))))
-      '(("sintese" . "Sínteses") ("estudo" . "Estudos") (nil . "Outras"))
+      '(("sintese" . "Sínteses") 
+        ("estudo" . "Estudos") 
+        ("conceito" . "Conceitos") 
+        (nil . "Outras"))
       "")
      "#+begin_export html\n</div>\n#+end_export\n")))
 

@@ -46,10 +46,16 @@ em =estudos/=, =sinteses/= ou =diario/= do vault, com =:ID:= novo, e o abre.
 (require 'nr-diario)
 
 (defconst nr/modelos
-  '(("estudo"  :dir "estudos/"  :status t   :corpo nr/--corpo-estudo)
-    ("sintese" :dir "sinteses/" :status t   :corpo nr/--corpo-sintese)
-    ("diario"  :dir "diario/"   :status nil :corpo nr/--corpo-diario))
+  '(
+    ("conceito" :dir "estudo/conceitos/"  :status t   :corpo nr/--corpo-conceito)
+    ("estudo"   :dir "estudos/"           :status t   :corpo nr/--corpo-estudo)
+    ("sintese"  :dir "sinteses/"          :status t   :corpo nr/--corpo-sintese)
+    ("diario"   :dir "diario/"            :status nil :corpo nr/--corpo-diario)
+    )
   "Modelos por #+NOTE_TYPE: diretório, se leva #+STATUS: e função do corpo.")
+
+(defun nr/--corpo-conceito (_tags)
+  (concat "* Definição\n\n* Intuição\n\n* Exemplos\n\n* Veja também\n"))
 
 (defun nr/--corpo-estudo (_tags)
   (concat "* Ideia central\n\n* Detalhes\n\n* Exemplos\n\n* Perguntas em aberto\n"))
@@ -135,6 +141,17 @@ Com prefixo (\\[universal-argument]) pergunta também se ela é publicada."
    (list (read-string "Título: ")
          (split-string (read-string "Tags (espaço): ") " " t)))
   (find-file (nr/criar-nota "estudo" titulo :tags tags
+                            :publicar (and current-prefix-arg
+                                           (y-or-n-p "Publicar no site? ")))))
+
+;;;###autoload
+(defun nr/nova-nota-conceito (titulo &optional tags)
+  "Cria uma nota de conceito privada com TITULO e a abre.
+Com prefixo (\\[universal-argument]) pergunta também se ela é publicada."
+  (interactive
+   (list (read-string "Título: ")
+         (split-string (read-string "Tags (espaço): ") " " t)))
+  (find-file (nr/criar-nota "conceito" titulo :tags tags
                             :publicar (and current-prefix-arg
                                            (y-or-n-p "Publicar no site? ")))))
 
@@ -228,7 +245,7 @@ motivo do =notas-por-tag=: o resultado é texto gravado no arquivo).
 (require 'nr-index)
 (require 'nr-sinteses)
 
-(defconst nr/tags-genericas '("estudo" "sintese" "diario"))
+(defconst nr/tags-genericas '("conceito" "estudo" "sintese" "diario"))
 
 (defun nr/--tags-relevantes (nota)
   (seq-remove (lambda (tg) (or (equal tg nr/tag-publicar) (member tg nr/tags-genericas)))
@@ -358,7 +375,10 @@ afins mostram a =og:image=. Cada nota *publicável* ganha um cartão PNG
 (defun nr/og-svg (nota)
   "Texto SVG do cartão de NOTA."
   (let* ((tipo (nr/nota-tipo nota))
-         (cor (if (equal tipo "sintese") "#2e7d4f" "#1f4e8c"))
+         (cor (pcase tipo
+                ("sintese"  "#2e7d4f")
+                ("conceito" "#6a3d9a")
+                (_          "#1f4e8c")))
          (rotulo (upcase (string-join (delq nil (list tipo (nr/nota-status nota))) " · ")))
          (linhas (nr/--quebrar-linhas (nr/nota-titulo nota) 24 3))
          (tags (mapconcat (lambda (tg) (concat "#" tg))
@@ -417,3 +437,6 @@ afins mostram a =og:image=. Cada nota *publicável* ganha um cartão PNG
 (provide 'nr-og)
 ;;; nr-og.el ends here
 #+end_src
+
+#+RESULTS:
+: nr-og

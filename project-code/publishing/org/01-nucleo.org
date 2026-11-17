@@ -141,8 +141,14 @@ O ox-publish compara o :exclude com o caminho *relativo* à raiz do projeto
 ;;;; Texto
 
 (defconst nr/sinonimos-tipo
-  '(("study" . "estudo") ("synthesis" . "sintese") ("journal" . "diario")
-    ("síntese" . "sintese") ("diário" . "diario"))
+  '(
+    ("concept" . "conceito") 
+    ("study" . "estudo") 
+    ("synthesis" . "sintese") 
+    ("journal" . "diario") 
+    ("síntese" . "sintese") 
+    ("diário" . "diario") 
+    )
   "Nomes alternativos de #+NOTE_TYPE: e seu nome canônico.")
 
 (defconst nr/sinonimos-status
@@ -184,6 +190,9 @@ Org >= 9.7 usa `org-export-before-processing-functions'; antes, `-hook'."
 (provide 'nr-core)
 ;;; nr-core.el ends here
 #+end_src
+
+#+RESULTS:
+: nr-core
 
 * =nr-index.el=
 

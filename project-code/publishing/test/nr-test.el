@@ -427,6 +427,53 @@
     (should-error (nr/cabecalho "inexistente" "x"))
     (should (equal (nr/--slug "Ação & Coração — parte 2") "acao-coracao-parte-2"))))
 
+;;;; Sinônimos de tipo/status (study, growing...) e índice sem notas escondidas
+
+(ert-deftest nr-test-sinonimos-e-indice ()
+  (should (equal (nr/normalizar-tipo "Study") "estudo"))
+  (should (equal (nr/normalizar-tipo nil) "estudo"))
+  (should (equal (nr/normalizar-tipo "outro") "outro"))
+  (should (equal (nr/normalizar-status "Growing") "crescendo"))
+  (should-not (nr/normalizar-status ""))
+  (nr-test--com-vault
+    (nr-test--escrever
+     nr/vault "estudos/ingles.org"
+     '(":PROPERTIES:" ":ID: id-en" ":END:" "#+TITLE: Nota inglesa"
+       "#+NOTE_TYPE: study" "#+STATUS: growing" "#+FILETAGS: :publish:" "* T" "x"))
+    (nr-test--escrever
+     nr/vault "estudos/estranha.org"
+     '(":PROPERTIES:" ":ID: id-es" ":END:" "#+TITLE: Nota estranha"
+       "#+NOTE_TYPE: ensaio" "#+FILETAGS: :publish:" "* T" "x"))
+    (nr/indice-construir)
+    (let ((n (nr/nota-por-id "id-en")))
+      (should (equal (nr/nota-tipo n) "estudo"))
+      (should (equal (nr/nota-status n) "crescendo")))
+    (let ((idx (nr/sitemap "T" nil)))
+      (should (string-search "Nota inglesa" idx))
+      (should (string-match-p "\\* Estudos\n[^*]*Nota inglesa" idx))
+      (should (string-match-p "\\* Outras\n[^*]*Nota estranha" idx)))))
+
+;;;; Comandos de nota de diário e estudo
+
+(ert-deftest nr-test-nova-nota-diario ()
+  (nr-test--com-vault
+    (let ((arq (expand-file-name "2026-12-01.org" nr/diario-dir)))
+      (save-window-excursion
+        (nr/nova-nota-diario "2026-12-01" "Primeira")
+        (should (file-exists-p arq))
+        (kill-buffer (current-buffer))
+        (nr/nova-nota-diario "2026-12-01")            ; mesmo dia: acrescenta
+        (kill-buffer (current-buffer)))
+      (let ((s (nr-test--ler arq)))
+        (should (string-search "#+NOTE_TYPE: diario" s))
+        (should-not (string-search "publish" s))
+        (should (string-search "— Primeira" s))
+        (should (= 2 (cl-count ?* (replace-regexp-in-string "[^*\n]" "" s))))
+        (should (= 2 (length (nr/diario-coletar "2026-12-01" "2026-12-01"))))))
+    (let ((c (car (nr/capture-templates))))
+      (should (equal (car c) "d")))
+    (should (keymapp nr/mapa-nova))))
+
 ;;;; Notas relacionadas
 
 (ert-deftest nr-test-relacionadas ()
