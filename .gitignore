@@ -7,3 +7,5 @@ _site/
 .#*
 DEPLOY_KEY*
 *.pdf
+
+diario/*
