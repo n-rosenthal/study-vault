@@ -3,10 +3,10 @@
 :END:
 #+TITLE: Métricas
 #+DATE: [2026-11-17 ter]
-#+DESCRIPTION: 
+#+DESCRIPTION: Definição (amplo senso) para /métricas/
 #+STATUS: crescendo
 #+NOTE_TYPE: conceito
-#+FILETAGS: :concept:mathematics/general:computer-science/general:conceito:
+#+FILETAGS: :concept:mathematics/general:computer-science/general:conceito:publish:
 
 * Definição
 Uma métrica \( m \) é uma função quantitativa que busca /medir/ determinado /atributo/ de uma *entidade*, *processo*, *artefato* ou *sistema*:
