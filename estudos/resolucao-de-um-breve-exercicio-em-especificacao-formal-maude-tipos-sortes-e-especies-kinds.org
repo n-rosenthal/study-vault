@@ -1,6 +1,12 @@
+:PROPERTIES:
+:ID:   study-exercise-formal-specification-types-sorts-kinds
+:END:
+
 #+TITLE: Resolução de exercício em Especificação Formal (Maude)
 #+SUBTITLE: Tipos, sortes e espécies (kinds)
 #+DATE: [2026-11-17 ter]
+#+STATUS: maduro
+#+NOTE_TYPE: estudo
 #+DESCRIPTION: Estudo sobre determinação de tipos em Maude
 #+FILETAGS: :computer-science/formal-specification/exercise:estudo:publish:
 
