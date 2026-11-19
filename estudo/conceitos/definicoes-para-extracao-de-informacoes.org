@@ -1,0 +1,31 @@
+:PROPERTIES:
+:ID:       compsci-nlp--information-extraction--definition
+:END:
+#+TITLE: Definições para Extração de Informações
+#+DATE: [2026-11-19 qui]
+#+DESCRIPTION: 
+#+STATUS: semente
+#+NOTE_TYPE: conceito
+#+FILETAGS: :natural-language-processing:publish:conceito:
+
+#+ATTR_LATEX: :options [title={Definição Informal}]
+#+begin_teorema
+Obter *informações estruturadas* a partir de *dados não estruturados*.
+#+end_teorema
+
+* Sobre /Extração de Informações/
+Em /Information Extraction/ (IE), aplicamos um ={modelo}= à uma sequência de entrada de tamanho \( n \) e esperamos obter uma sequência de /rótulos/ de saída, de mesmo tamanho \( n \), tal que para cada /token/ do texto inicial tenhamos um rótulo associado. Isto difere de ={classificação}=, nas quais associamos uma /classe/ ou /categoria/ a toda uma sequência.
+
+#+begin_margem
+IE *não é uma tarefa /sequence to sequence/.* Tarefas ~seq2seq~ *não garantem* que a saída produzida tenha o *mesmo tamanho* da entrada.
+#+end_margem
+
+#+begin_note
+Extração de Informações é uma tarefa do tipo *rotulagem de sequência* (/sequence labeling/ ou /token classification/.
+#+end_note
+
+Assim como outras áreas históricas de Processamento de Linguagem Natural, as tarefas em Extração de Informações podem ser resolvidas por técnicas *baseadas em regras* (={Brill Tagger}=), *baseadas em modelos estatísticos* (={Modelos de Markov Ocultos}=) ou *baseadas em modelos de redes neurais* (={BiLSTM-CNNs}=).
+
+
+
+
