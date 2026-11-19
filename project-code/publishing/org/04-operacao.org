@@ -1,11 +1,13 @@
-#+TITLE: Operação: ponto de entrada, testes, CI e build
-#+AUTHOR: Nicolas
-#+LANGUAGE: pt
-#+PROPERTY: header-args:emacs-lisp :mkdirp yes :comments no
-#+PROPERTY: header-args:makefile :mkdirp yes :comments no
-#+PROPERTY: header-args:yaml :mkdirp yes :comments no
-#+PROPERTY: header-args:conf :mkdirp yes :comments no
-#+STARTUP: overview
+#+TITLE:         Operação: ponto de entrada, testes, CI e build
+#+AUTHOR:        n-rosenthal
+#+LANGUAGE:      pt
+#+PROPERTY:      header-args:emacs-lisp :mkdirp yes :comments no
+#+PROPERTY:      header-args:makefile :mkdirp yes :comments no
+#+PROPERTY:      header-args:yaml :mkdirp yes :comments no
+#+PROPERTY:      header-args:conf :mkdirp yes :comments no
+#+VERSION:       1.0.2
+#+VERSION-NAME:  private-vaults
+#+STARTUP:       overview
 
 * Visão geral
 
@@ -118,6 +120,26 @@ exclude_selectors:
 force_language: pt
 #+end_src
 
+* Vault privada (modo local)
+
+=scripts/privado.sh= roda um comando com o ambiente da vault privada
+(=NR_MODO=privado=: inclui tudo, inclusive o diário, exceto notas =private=).
+Exemplos: =scripts/privado.sh make build=, =scripts/privado.sh make servir=,
+=scripts/privado.sh emacs=. Nunca use no CI (o =nr/publicar= se recusa).
+
+#+begin_src sh :tangle ../scripts/privado.sh :tangle-mode (identity #o755)
+#!/usr/bin/env bash
+# Executa um comando com o ambiente da vault privada.
+set -euo pipefail
+PRIV="${NR_PRIVADA:-$HOME/private-vault}"
+export NR_MODO=privado
+export NR_VAULT="$PRIV/"
+export NR_SAIDA="$PRIV/_site"
+export NR_EXPORTS="$PRIV/exports"
+export NR_CACHE="$PRIV/.cache-nr"
+export NR_SITE_URL="${NR_PRIVADA_URL:-http://localhost:8080}"
+exec "$@"
+#+end_src
 * Makefile
 
 Usa =.RECIPEPREFIX= (=>=) para não depender de tabulações.
@@ -127,7 +149,10 @@ Usa =.RECIPEPREFIX= (=>=) para não depender de tabulações.
 EMACS ?= emacs
 VAULT ?= $(HOME)/org/roam
 
-.PHONY: tangle test compile build clean instalar-ci
+PORTA ?= 8080
+NR_SAIDA ?= $(HOME)/site/public
+
+.PHONY: tangle test compile build servir clean instalar-ci
 
 tangle:
 > $(EMACS) -Q --batch -l scripts/tangle.el
@@ -142,6 +167,11 @@ compile: tangle
 build: tangle
 > $(EMACS) -Q --batch -l scripts/build.el
 
+# Serve o site gerado só nesta máquina (127.0.0.1). Use NR_SAIDA para a pasta.
+servir:
+> @echo "Servindo $(NR_SAIDA) em http://localhost:$(PORTA) (Ctrl+C para parar)"
+> python3 -m http.server $(PORTA) --bind 127.0.0.1 --directory "$(NR_SAIDA)"
+
 clean:
 > rm -f lisp/*.elc
 
@@ -151,6 +181,22 @@ instalar-ci:
 > cp .github/workflows/publicar.yml $(VAULT)/.github/workflows/publicar.yml
 > @echo "Workflow copiado para $(VAULT)/.github/workflows/. Ajuste PUBLISHING_DIR e NR_SITE_URL."
 #+end_src
+
+* Workflow de deploy
+
+Fica em =.github/workflows/publicar.yml= *deste projeto* e é copiado para a
+raiz do repositório do vault com =make instalar-ci= (o GitHub só lê
+=.github/= da raiz do repositório).
+
+Pontos de projeto:
+
+- =fetch-depth: 0=: a data "atualizada em" vem do histórico do git.
+- Roda os *testes* antes do build; se falharem, nada é publicado.
+- =NR_VAULT= aponta para o checkout; =NR_SAIDA= para =_site/= (diretório
+  proibido, então nunca vira nota).
+- Guardas depois do build: diretório =diario/= ausente na saída, =diario= ausente
+  no grafo, arquivos essenciais presentes.
+- *AJUSTAR*: =PUBLISHING_DIR=, =NR_SITE_URL= e =external_repository=.
 
 * Workflow de deploy
 
@@ -738,6 +784,85 @@ as fontes estiverem instalados.
       (should (string-search "Nota inglesa" idx))
       (should (string-match-p "\\* Estudos\n[^*]*Nota inglesa" idx))
       (should (string-match-p "\\* Outras\n[^*]*Nota estranha" idx)))))
+
+;;;; Modo privado e várias vaults
+
+(ert-deftest nr-test-modo-privado ()
+  (nr-test--com-vault
+    (nr-test--escrever
+     nr/vault "diario/2026-12-02.org"
+     '(":PROPERTIES:" ":ID: id-dia" ":END:" "#+TITLE: 2026-12-02"
+       "#+DATE: [2026-12-02 Wed]" "#+NOTE_TYPE: diario" "* 10:00" "Hoje estudei."))
+    (nr-test--escrever
+     nr/vault "ml/oculta.org"
+     '(":PROPERTIES:" ":ID: id-oculta" ":END:" "#+TITLE: Oculta"
+       "#+FILETAGS: :private:" "* T" "x"))
+    (nr-test--escrever
+     nr/vault "ml/sem-tag.org"
+     '(":PROPERTIES:" ":ID: id-sem" ":END:" "#+TITLE: Sem tag" "* T" "x"))
+    ;; modo público (padrão): diário e nota sem tag ficam de fora
+    (nr/indice-construir)
+    (should-not (nr/nota-publicavel (nr/nota-por-id "id-dia")))
+    (should-not (nr/nota-publicavel (nr/nota-por-id "id-sem")))
+    (should-not (string-search "Diário" (nr/sitemap "T" nil)))
+    ;; modo privado: entra tudo, exceto a tag private
+    (let ((nr/modo 'privado)
+          (nr/diretorios-proibidos (nr/--proibidos-do-modo 'privado)))
+      (nr/indice-construir)
+      (should (nr/nota-publicavel (nr/nota-por-id "id-dia")))
+      (should (nr/nota-publicavel (nr/nota-por-id "id-sem")))
+      (should-not (nr/nota-publicavel (nr/nota-por-id "id-oculta")))
+      (let ((idx (nr/sitemap "T" nil)))
+        (should (string-match-p "\\* Diário\n[^*]*2026-12-02" idx))
+        (should (string-search "Sem tag" idx))
+        (should-not (string-search "Oculta" idx)))
+      ;; o feed não lista o diário
+      (nr/gerar-feed)
+      (should-not (string-search "2026-12-02" (nr-test--site "feed.xml")))
+      ;; e o CI recusa o modo privado
+      (let ((process-environment (cons "CI=true" process-environment)))
+        (should (string-search "Modo privado"
+                               (cadr (should-error (nr/publicar)))))))))
+
+(ert-deftest nr-test-sem-qr-code ()
+  (nr-test--com-vault
+    (nr/indice-construir)
+    (let ((arq (expand-file-name "ml/retropropagacao.org" nr/vault)))
+      (should (string-search "nrurl" (nr-test--latex arq)))
+      (let ((nr/qr-codigo nil))
+        (should-not (string-search "nrurl" (nr-test--latex arq)))))))
+
+(ert-deftest nr-test-usar-vault ()
+  (nr-test--com-vault
+    (let* ((outra (file-name-as-directory (expand-file-name "privada" base)))
+           (nr/vaults `(("publica" :vault ,nr/vault :modo publico)
+                        ("privada" :vault ,outra :modo privado
+                         :url "http://localhost:9000/")))
+           (nr/modo nr/modo) (nr/qr-codigo nr/qr-codigo) (nr/og-imagens nr/og-imagens)
+           (nr/diretorios-proibidos nr/diretorios-proibidos)
+           (nr/vault-atual nil) (org-publish-project-alist nil)
+           (publica nr/vault))
+      (nr-test--escrever
+       outra "estudos/a.org"
+       '(":PROPERTIES:" ":ID: id-a" ":END:" "#+TITLE: A" "* T" "x"))
+      (nr/usar-vault "privada")
+      (should (equal nr/vault outra))
+      (should (eq nr/modo 'privado))
+      (should (equal nr/site-url "http://localhost:9000"))
+      (should (equal nr/saida (expand-file-name "_site/" outra)))
+      (should (equal nr/diario-dir (expand-file-name "diario/" outra)))
+      (should-not nr/qr-codigo)
+      (should-not nr/og-imagens)
+      (should (nr/nota-publicavel (nr/nota-por-id "id-a")))
+      (should-not (nr/nota-por-id "id-retro"))             ; índice da outra vault
+      (should (equal (plist-get (cdar org-publish-project-alist) :base-directory) outra))
+      (nr/usar-vault "publica")
+      (should (equal nr/vault publica))
+      (should (eq nr/modo 'publico))
+      (should nr/qr-codigo)
+      (should (nr/nota-publicavel (nr/nota-por-id "id-retro")))
+      (should-not (nr/nota-por-id "id-a"))
+      (should-error (nr/usar-vault "nada") :type 'user-error))))
 
 ;;;; Comandos de nota de diário e estudo
 

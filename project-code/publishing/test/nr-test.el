@@ -453,6 +453,85 @@
       (should (string-match-p "\\* Estudos\n[^*]*Nota inglesa" idx))
       (should (string-match-p "\\* Outras\n[^*]*Nota estranha" idx)))))
 
+;;;; Modo privado e várias vaults
+
+(ert-deftest nr-test-modo-privado ()
+  (nr-test--com-vault
+    (nr-test--escrever
+     nr/vault "diario/2026-12-02.org"
+     '(":PROPERTIES:" ":ID: id-dia" ":END:" "#+TITLE: 2026-12-02"
+       "#+DATE: [2026-12-02 Wed]" "#+NOTE_TYPE: diario" "* 10:00" "Hoje estudei."))
+    (nr-test--escrever
+     nr/vault "ml/oculta.org"
+     '(":PROPERTIES:" ":ID: id-oculta" ":END:" "#+TITLE: Oculta"
+       "#+FILETAGS: :private:" "* T" "x"))
+    (nr-test--escrever
+     nr/vault "ml/sem-tag.org"
+     '(":PROPERTIES:" ":ID: id-sem" ":END:" "#+TITLE: Sem tag" "* T" "x"))
+    ;; modo público (padrão): diário e nota sem tag ficam de fora
+    (nr/indice-construir)
+    (should-not (nr/nota-publicavel (nr/nota-por-id "id-dia")))
+    (should-not (nr/nota-publicavel (nr/nota-por-id "id-sem")))
+    (should-not (string-search "Diário" (nr/sitemap "T" nil)))
+    ;; modo privado: entra tudo, exceto a tag private
+    (let ((nr/modo 'privado)
+          (nr/diretorios-proibidos (nr/--proibidos-do-modo 'privado)))
+      (nr/indice-construir)
+      (should (nr/nota-publicavel (nr/nota-por-id "id-dia")))
+      (should (nr/nota-publicavel (nr/nota-por-id "id-sem")))
+      (should-not (nr/nota-publicavel (nr/nota-por-id "id-oculta")))
+      (let ((idx (nr/sitemap "T" nil)))
+        (should (string-match-p "\\* Diário\n[^*]*2026-12-02" idx))
+        (should (string-search "Sem tag" idx))
+        (should-not (string-search "Oculta" idx)))
+      ;; o feed não lista o diário
+      (nr/gerar-feed)
+      (should-not (string-search "2026-12-02" (nr-test--site "feed.xml")))
+      ;; e o CI recusa o modo privado
+      (let ((process-environment (cons "CI=true" process-environment)))
+        (should (string-search "Modo privado"
+                               (cadr (should-error (nr/publicar)))))))))
+
+(ert-deftest nr-test-sem-qr-code ()
+  (nr-test--com-vault
+    (nr/indice-construir)
+    (let ((arq (expand-file-name "ml/retropropagacao.org" nr/vault)))
+      (should (string-search "nrurl" (nr-test--latex arq)))
+      (let ((nr/qr-codigo nil))
+        (should-not (string-search "nrurl" (nr-test--latex arq)))))))
+
+(ert-deftest nr-test-usar-vault ()
+  (nr-test--com-vault
+    (let* ((outra (file-name-as-directory (expand-file-name "privada" base)))
+           (nr/vaults `(("publica" :vault ,nr/vault :modo publico)
+                        ("privada" :vault ,outra :modo privado
+                         :url "http://localhost:9000/")))
+           (nr/modo nr/modo) (nr/qr-codigo nr/qr-codigo) (nr/og-imagens nr/og-imagens)
+           (nr/diretorios-proibidos nr/diretorios-proibidos)
+           (nr/vault-atual nil) (org-publish-project-alist nil)
+           (publica nr/vault))
+      (nr-test--escrever
+       outra "estudos/a.org"
+       '(":PROPERTIES:" ":ID: id-a" ":END:" "#+TITLE: A" "* T" "x"))
+      (nr/usar-vault "privada")
+      (should (equal nr/vault outra))
+      (should (eq nr/modo 'privado))
+      (should (equal nr/site-url "http://localhost:9000"))
+      (should (equal nr/saida (expand-file-name "_site/" outra)))
+      (should (equal nr/diario-dir (expand-file-name "diario/" outra)))
+      (should-not nr/qr-codigo)
+      (should-not nr/og-imagens)
+      (should (nr/nota-publicavel (nr/nota-por-id "id-a")))
+      (should-not (nr/nota-por-id "id-retro"))             ; índice da outra vault
+      (should (equal (plist-get (cdar org-publish-project-alist) :base-directory) outra))
+      (nr/usar-vault "publica")
+      (should (equal nr/vault publica))
+      (should (eq nr/modo 'publico))
+      (should nr/qr-codigo)
+      (should (nr/nota-publicavel (nr/nota-por-id "id-retro")))
+      (should-not (nr/nota-por-id "id-a"))
+      (should-error (nr/usar-vault "nada") :type 'user-error))))
+
 ;;;; Comandos de nota de diário e estudo
 
 (ert-deftest nr-test-nova-nota-diario ()

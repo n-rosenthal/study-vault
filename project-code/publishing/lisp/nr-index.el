@@ -86,7 +86,8 @@
                   "%Y-%m-%d" (file-attribute-modification-time (file-attributes arquivo))))
        :status (nr/normalizar-status (funcall kw "STATUS"))
        :desc (funcall kw "DESCRIPTION")
-       :publicavel (and (member nr/tag-publicar tags)
+       :publicavel (and (or (eq nr/modo 'privado)
+                            (member nr/tag-publicar tags))
                         (not (member nr/tag-privada tags))
                         (not (nr/diretorio-proibido-p arquivo))
                         t)
@@ -95,7 +96,6 @@
        :links-arq (mapcar #'nr/--sem-ancora
                           (append (nr/--coletar "\\[\\[file:\\([^]\n]+\\)\\]" 1)
                                   (nr/--coletar "\\[\\[\\(\\.\\.?/[^]\n]+\\)\\]" 1)))))))
-
 ;;;; Índice
 
 (defun nr/indice-construir ()

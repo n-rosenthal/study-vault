@@ -11,6 +11,7 @@
 (require 'nr-relacionadas)
 (require 'nr-grafo)
 (require 'nr-og)
+(require 'nr-diario)
 (require 'ox-publish)
 
 (defcustom nr/usar-cache nil
@@ -122,14 +123,19 @@ window.addEventListener('DOMContentLoaded', function () {
                         (if (car grupo)
                             (equal (nr/nota-tipo n) (car grupo))
                           ;; "Outras": nada fica escondido por causa de um tipo inesperado
-                          (not (member (nr/nota-tipo n) '("sintese" "estudo" "conceito")))))
+                          (not (member (nr/nota-tipo n) '("sintese" "estudo" "conceito" "diario")))))
                       notas)))
           (when itens
             (concat "* " (cdr grupo) "\n"
                     (mapconcat #'nr/--item-do-indice itens "\n") "\n\n"))))
       '(("sintese" . "Sínteses") 
         ("estudo" . "Estudos") 
-        ("conceito" . "Conceitos") 
+        ("conceito" . "Conceitos")
+
+        ("diario" . "Diário")
+
+     ;; ("vault"  . "Vault") -> persons, medias, data
+        
         (nil . "Outras"))
       "")
      "#+begin_export html\n</div>\n#+end_export\n")))
@@ -141,9 +147,23 @@ window.addEventListener('DOMContentLoaded', function () {
   (interactive)
   (when (string-search "SEU-USUARIO" nr/site-url)
     (message "AVISO: nr/site-url ainda é o padrão (%s); defina NR_SITE_URL" nr/site-url))
-  (let* ((notas (seq-take (nr/--ordenar-notas (nr/notas t) 'recentes) nr/feed-limite))
-         (destino (expand-file-name "feed.xml" nr/saida))
-         (atualizado (if notas (nr/nota-data (car notas)) (format-time-string "%Y-%m-%d"))))
+  (let* (
+       (notas
+        (seq-take
+         (nr/--ordenar-notas
+          (seq-remove (lambda (n) (equal (nr/nota-tipo n) "diario")) (nr/notas t))
+          'recentes)
+         nr/feed-limite))
+
+       (destino
+        (expand-file-name "feed.xml" nr/saida)
+        )
+
+       (atualizado
+        (if notas (nr/nota-data (car notas)) (format-time-string "%Y-%m-%d"))
+        )
+       )
+
     (make-directory nr/saida t)
     (with-temp-file destino
       (set-buffer-file-coding-system 'utf-8-unix)
@@ -264,6 +284,57 @@ O ox-publish compara o :exclude com caminhos *relativos* ao vault."
            :publishing-function org-publish-attachment)
           ("estudos" :components ("estudos-org" "estudos-anexos" "estudos-static")))))
 
+;;;; Várias vaults
+
+(defcustom nr/vaults nil
+  "Vaults conhecidas, para `nr/usar-vault'.
+Cada item é (NOME :vault DIR [:saida DIR :exports DIR :cache DIR :url URL
+:modo publico|privado :autor TEXTO :qr BOOL :og BOOL :proibidos LISTA])."
+  :type 'sexp :group 'nr)
+
+(defvar nr/vault-atual nil "Nome da vault escolhida por `nr/usar-vault'.")
+
+(defun nr/--dir (caminho)
+  (file-name-as-directory (expand-file-name caminho)))
+
+(defun nr/--opcao (cfg chave padrao)
+  "Valor de CHAVE em CFG, ou PADRAO se a chave não existe."
+  (if (plist-member cfg chave) (plist-get cfg chave) padrao))
+
+;;;###autoload
+(defun nr/usar-vault (nome)
+  "Passa a operar sobre a vault NOME de `nr/vaults'.
+Ajusta caminhos, modo e URL, reconstrói o índice e redefine os projetos."
+  (interactive
+   (list (completing-read "Vault: " (mapcar #'car nr/vaults) nil t nil nil nr/vault-atual)))
+  (let* ((cfg (or (cdr (assoc nome nr/vaults)) (user-error "Vault desconhecida: %s" nome)))
+         (vault (or (plist-get cfg :vault) (user-error "Vault %s sem :vault" nome)))
+         (modo (or (plist-get cfg :modo) 'publico))
+         (privado (eq modo 'privado)))
+    (unless (memq modo '(publico privado))
+      (user-error "Modo inválido em %s: %S (use publico ou privado)" nome modo))
+    (setq nr/vault (nr/--dir vault)
+          nr/modo modo
+          nr/saida (nr/--dir (or (plist-get cfg :saida) (expand-file-name "_site/" nr/vault)))
+          nr/exports (nr/--dir (or (plist-get cfg :exports)
+                                   (expand-file-name "exports/" nr/vault)))
+          nr/cache (nr/--dir (or (plist-get cfg :cache)
+                                 (expand-file-name ".cache-nr/" nr/vault)))
+          nr/site-url (string-remove-suffix
+                       "/" (or (plist-get cfg :url)
+                               (if privado "http://localhost:8080" nr/site-url)))
+          nr/autor (or (plist-get cfg :autor) nr/autor)
+          nr/diretorios-proibidos (or (plist-get cfg :proibidos) (nr/--proibidos-do-modo modo))
+          nr/qr-codigo (and (nr/--opcao cfg :qr (not privado)) t)
+          nr/og-imagens (and (nr/--opcao cfg :og (not privado)) (nr/--conversor-svg) t)
+          nr/diario-dir (expand-file-name "diario/" nr/vault)
+          nr/indice nil nr/indice--por-id nil nr/indice--backlinks nil
+          nr/vault-atual nome)
+    (nr/indice-construir)
+    (nr/projetos-definir)
+    (message "Vault %s (%s): %d notas, %d no site"
+             nome modo (hash-table-count nr/indice) (length (nr/notas t)))))
+
 ;;;; Busca (Pagefind)
 
 (defcustom nr/pagefind-versao "1.3.0"
@@ -287,6 +358,8 @@ O ox-publish compara o :exclude com caminhos *relativos* ao vault."
 (defun nr/publicar (&optional forcar)
   "Publica o site completo. Com FORCAR, ignora o cache do ox-publish."
   (interactive "P")
+  (when (and (eq nr/modo 'privado) (nr/ci-p))
+    (error "Modo privado não pode rodar no CI (publicaria o diário e notas privadas)"))
   (nr/indice-construir)
   (when (or (nr/ci-p) nr/atualizar-dblocks-ao-publicar)
     (nr/atualizar-dblocks)

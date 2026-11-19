@@ -2,7 +2,10 @@
 EMACS ?= emacs
 VAULT ?= $(HOME)/org/roam
 
-.PHONY: tangle test compile build clean instalar-ci
+PORTA ?= 8080
+NR_SAIDA ?= $(HOME)/site/public
+
+.PHONY: tangle test compile build servir clean instalar-ci
 
 tangle:
 > $(EMACS) -Q --batch -l scripts/tangle.el
@@ -16,6 +19,11 @@ compile: tangle
 
 build: tangle
 > $(EMACS) -Q --batch -l scripts/build.el
+
+# Serve o site gerado só nesta máquina (127.0.0.1). Use NR_SAIDA para a pasta.
+servir:
+> @echo "Servindo $(NR_SAIDA) em http://localhost:$(PORTA) (Ctrl+C para parar)"
+> python3 -m http.server $(PORTA) --bind 127.0.0.1 --directory "$(NR_SAIDA)"
 
 clean:
 > rm -f lisp/*.elc

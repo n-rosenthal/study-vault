@@ -168,11 +168,11 @@
         linhas)
     (cond
      ((org-export-derived-backend-p backend 'latex)
-      (when-let* ((classe (plist-get cfg :latex)))
+      (when-let ((classe (plist-get cfg :latex)))
         (push (format "#+LATEX_CLASS: %s" classe) linhas))
       ;; URL da versão web (usada pelo QR code do estudo.sty). Os catcodes
       ;; deixam %, _ e # passarem sem escape.
-      (when publica
+      (when (and publica nr/qr-codigo)
         (push (format "#+LATEX_HEADER: \\begingroup\\catcode`\\%%=12 \\catcode`\\_=12 \\catcode`\\#=12 \\gdef\\nrurl{%s%s}\\endgroup"
                       nr/site-url (nr/url nota))
               linhas)))
@@ -180,7 +180,7 @@
       ;; O #+HTML_HEAD: de um arquivo *substitui* o :html-head do projeto
       ;; (não soma), então o CSS base também entra por aqui.
       (push "#+HTML_HEAD: <link rel=\"stylesheet\" href=\"/css/site.css\">" linhas)
-      (when-let* ((css (plist-get cfg :css)))
+      (when-let ((css (plist-get cfg :css)))
         (push (format "#+HTML_HEAD: <link rel=\"stylesheet\" href=\"/css/%s\">" css) linhas))
       (push (format "#+HTML_HEAD: <link rel=\"alternate\" type=\"application/atom+xml\" title=\"%s\" href=\"/feed.xml\">"
                     (nr/escapar-html nr/titulo-do-site))
@@ -188,11 +188,11 @@
       (push "#+HTML_HEAD: <script defer src=\"/js/grafo-local.js\"></script>" linhas)
       (unless (equal tipo "indice")
         (push "#+HTML_HEAD: <meta property=\"og:type\" content=\"article\">" linhas)
-        (when-let* ((titulo (funcall val "TITLE")))
+        (when-let ((titulo (funcall val "TITLE")))
           (push (format "#+HTML_HEAD: <meta property=\"og:title\" content=\"%s\">"
                         (nr/escapar-html titulo))
                 linhas))
-        (when-let* ((desc (funcall val "DESCRIPTION")))
+        (when-let ((desc (funcall val "DESCRIPTION")))
           (push (format "#+HTML_HEAD: <meta property=\"og:description\" content=\"%s\">"
                         (nr/escapar-html desc))
                 linhas))
@@ -206,7 +206,7 @@
                   linhas)
             (push "#+HTML_HEAD: <meta name=\"twitter:card\" content=\"summary_large_image\">"
                   linhas))))))
-    (when-let* ((op (plist-get cfg :opcoes)))
+    (when-let ((op (plist-get cfg :opcoes)))
       (push (concat "#+OPTIONS: " op) linhas))
     (unless (funcall val "AUTHOR")      ; sem isso o Org usa `user-full-name'
       (push (concat "#+AUTHOR: " nr/autor) linhas))

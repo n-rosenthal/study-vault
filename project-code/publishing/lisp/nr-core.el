@@ -43,11 +43,11 @@
   :type 'directory :group 'nr)
 
 (defcustom nr/site-url
-  (string-remove-suffix "/" (or (getenv "NR_SITE_URL") "https://SEU-USUARIO.github.io"))
+  (string-remove-suffix "/" (or (getenv "NR_SITE_URL") "https://n-rosenthal.github.io"))
   "URL base do site, sem barra final."
   :type 'string :group 'nr)
 
-(defcustom nr/autor (or (getenv "NR_AUTOR") "Nicolas")
+(defcustom nr/autor (or (getenv "NR_AUTOR") "n-rosenthal")
   "Autor usado nos documentos gerados."
   :type 'string :group 'nr)
 
@@ -55,10 +55,35 @@
   "Título do índice e do feed."
   :type 'string :group 'nr)
 
-(defcustom nr/diretorios-proibidos
-  '("diario" "private" "templates" "project-code" "_site" "node_modules")
-  "Diretórios (relativos ao vault) cujo conteúdo nunca é publicado."
+
+
+(defcustom nr/modo
+  (if (equal (getenv "NR_MODO") "privado") 'privado 'publico)
+  "Modo do pipeline.
+`publico': só vai para o site a nota com a tag de publicar, fora dos
+diretórios proibidos. `privado' (vault local, nunca na Internet): inclui
+tudo, inclusive o diário, exceto notas com a tag de privada."
+  :type '(choice (const publico) (const privado)) :group 'nr)
+
+(defconst nr/--proibidos-publico
+  '("diario" "private" "templates" "project-code" "_site" "node_modules"))
+
+(defconst nr/--proibidos-privado '("_site" "node_modules" "exports"))
+
+(defun nr/--proibidos-do-modo (&optional modo)
+  "Diretórios proibidos padrão para MODO (padrão: `nr/modo')."
+  (copy-sequence (if (eq (or modo nr/modo) 'privado)
+                     nr/--proibidos-privado
+                   nr/--proibidos-publico)))
+
+(defcustom nr/diretorios-proibidos (nr/--proibidos-do-modo)
+  "Diretórios (relativos ao vault) cujo conteúdo nunca vai para o site."
   :type '(repeat string) :group 'nr)
+
+(defcustom nr/qr-codigo (not (eq nr/modo 'privado))
+  "Se non-nil, o PDF de nota publicável traz QR code e URL da versão web."
+  :type 'boolean :group 'nr)
+
 
 (defcustom nr/tag-publicar "publish"
   "Tag em #+FILETAGS: que torna uma nota publicável."
@@ -69,7 +94,6 @@
   :type 'string :group 'nr)
 
 ;;;; Caminhos e privacidade
-
 (defun nr/diretorio-proibido-p (arquivo)
   "Non-nil se ARQUIVO está em diretório proibido ou oculto do vault."
   (let ((rel (file-relative-name arquivo nr/vault)))
@@ -86,6 +110,10 @@ O ox-publish compara o :exclude com o caminho *relativo* à raiz do projeto
   (concat "\\`\\(?:.*/\\)?"
           "\\(?:" (mapconcat #'regexp-quote nr/diretorios-proibidos "\\|")
           "\\|\\.[^/]+\\)/"))
+
+(defcustom nr/qr-codigo (not (eq nr/modo 'privado))
+  "Se non-nil, o PDF de nota publicável traz QR code e URL da versão web."
+  :type 'boolean :group 'nr)
 
 (defun nr/arquivos-org ()
   "Todos os .org do vault, sem descer em diretórios ocultos nem pegar backups."
