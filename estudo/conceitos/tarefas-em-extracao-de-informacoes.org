@@ -8,7 +8,7 @@
 #+NOTE_TYPE: conceito
 #+FILETAGS: :computer-science/natural-language-processing:publish:conceito:
 
-Existem diversas tarefas em [[compsci-nlp--information-extraction--definition][Extração de Informações]].
+Existem diversas tarefas em [[id:compsci-nlp--information-extraction--definition][Extração de Informações]].
 
 * Tarefas
 - ={Extração de Relações}= (/Relation Extraction/, RE)
