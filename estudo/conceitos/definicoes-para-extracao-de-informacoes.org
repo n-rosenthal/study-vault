@@ -20,9 +20,9 @@ Em /Information Extraction/ (IE), aplicamos um ={modelo}= à uma sequência de e
 IE *não é uma tarefa /sequence to sequence/.* Tarefas ~seq2seq~ *não garantem* que a saída produzida tenha o *mesmo tamanho* da entrada.
 #+end_margem
 
-#+begin_note
+#+begin_nota
 Extração de Informações é uma tarefa do tipo *rotulagem de sequência* (/sequence labeling/ ou /token classification/.
-#+end_note
+#+end_nota
 
 Assim como outras áreas históricas de Processamento de Linguagem Natural, as tarefas em Extração de Informações podem ser resolvidas por técnicas *baseadas em regras* (={Brill Tagger}=), *baseadas em modelos estatísticos* (={Modelos de Markov Ocultos}=) ou *baseadas em modelos de redes neurais* (={BiLSTM-CNNs}=).
 
