@@ -44,7 +44,7 @@ Dizemos que sistemas de tipos computam tipos à termos de forma *composicional*,
 #+end_nota
 
 ** Sistemas de Tipos Estáticos e Dinâmicos
-Um sistema de tipos é [[id: ...][dito estático] ... ] quando ..., e é [[id: ...][denominado dinâmico] ... ] ou *latente* quando /type tags/, ou *rótulos de tipos*, são utilizados para diferenciar estruturas no =[heap]=.
+Um sistema de tipos é .......... *latente* quando /type tags/, ou *rótulos de tipos*, são utilizados para diferenciar estruturas no =[heap]=.
 
 #+ATTR_CITA: :ref pierce-2002-tapl :cap 1.1 :pag 2 :lang en
 #+begin_quote
