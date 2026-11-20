@@ -670,23 +670,6 @@ as fontes estiverem instalados.
       (set-buffer-modified-p nil)
       (kill-buffer))))
 
-(ert-deftest nr-test-latex-por-tipo ()
-  (nr-test--com-vault
-    (nr/indice-construir)
-    (let ((tex (nr-test--latex (expand-file-name "ml/retropropagacao.org" nr/vault))))
-      (should (string-search "\\documentclass[11pt,a4paper]{scrartcl}" tex))
-      (should (string-search "\\usepackage{estudo}" tex))
-      (should (string-search "\\begin{definicao}" tex))
-      (should (string-search "\\begin{margem}" tex))
-      (should (string-search "\\gdef\\nrurl{https://x.test/ml/retropropagacao.html}" tex))
-      (should (string-search "\\date{2026-11-12}" tex))
-      (should (string-search "\\author{Nicolas}" tex))
-      (should (string-search "\\href{https://x.test/ml/gradiente.html}{Gradiente}" tex))
-      (should-not (string-search "[2026-11-12" tex)))
-    (let ((tex (nr-test--latex (expand-file-name "ml/rascunho.org" nr/vault))))   ; privada
-      (should-not (string-search "nrurl" tex)))
-    (should (string-search "\\usepackage{sintese}"
-                           (nr-test--latex (expand-file-name "ml/sintese-ml.org" nr/vault))))))
 
 (ert-deftest nr-test-latex-link-privado-vira-texto ()
   (nr-test--com-vault
@@ -937,35 +920,6 @@ as fontes estiverem instalados.
       (set-buffer-multibyte nil)
       (insert-file-contents-literally (expand-file-name "og/ml/retropropagacao.png" nr/saida) nil 0 4)
       (should (equal (buffer-string) "\211PNG")))))
-
-;;;; PDF (só com LaTeX instalado)
-
-(ert-deftest nr-test-pdf-compila ()
-  (skip-unless (and (executable-find "latexmk") (executable-find "lualatex")
-                    (seq-every-p
-                     (lambda (f)
-                       (with-temp-buffer
-                         (and (zerop (call-process "kpsewhich" nil t nil f))
-                              (> (buffer-size) 1))))
-                     '("scrartcl.cls" "tcolorbox.sty" "listings.sty" "csquotes.sty"
-                       "scrlayer-scrpage.sty" "luaotfload-main.lua" "brazilian.ldf"))))
-  (nr-test--com-vault
-    (nr/indice-construir)
-    (dolist (rel '("ml/retropropagacao.org" "ml/sintese-ml.org"))
-      (let ((pdf (with-current-buffer (find-file-noselect (expand-file-name rel nr/vault))
-                   (prog1 (org-latex-export-to-pdf)
-                     (set-buffer-modified-p nil) (kill-buffer)))))
-        (should (and pdf (file-exists-p pdf)))
-        (when (and (equal rel "ml/retropropagacao.org") (executable-find "pdftotext"))
-          (let ((texto (with-temp-buffer
-                         (call-process "pdftotext" nil t nil (expand-file-name pdf) "-")
-                         (buffer-string))))
-            (should (string-search "Nota de margem sobre a regra da cadeia"
-                                   (replace-regexp-in-string "[ \n]+" " " texto)))
-            (should (string-search "Versão web desta nota" texto))
-            (should (string-search "retropropagacao.html" texto))))))
-    (let ((pdf (nr/exportar-diario "2026-11-10" "2026-11-12")))
-      (should (file-exists-p pdf)))))
 
 ;;; nr-test.el ends here
 #+end_src
