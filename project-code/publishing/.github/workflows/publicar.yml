@@ -60,9 +60,6 @@ jobs:
       - name: Dependências do Emacs
         run: emacs --batch -l "$PUBLISHING_DIR/scripts/ci-deps.el"
 
-      #- name: Testes
-      #  run: make -C "$PUBLISHING_DIR" test
-
       - name: Build do site
         run: make -C "$PUBLISHING_DIR" build
 
