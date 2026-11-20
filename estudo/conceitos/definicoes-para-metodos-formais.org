@@ -1,0 +1,16 @@
+:PROPERTIES:
+:ID:       computer-science--formal-methods--definitions
+:END:
+#+TITLE: Definições para Métodos Formais
+#+DATE: [2026-11-19 qui]
+#+DESCRIPTION: 
+#+STATUS: semente
+#+NOTE_TYPE: conceito
+#+FILETAGS: :computer-science/formal-methods:publish:conceito:
+
+* Definições
+#+ATTR_CITA: :ref pierce-2002-tapl :cap 1.1 :pag 1 :lang en
+#+begin_quote
+Modern software engineering recognizes a broad range of /formal methods/ for helping ensure that a system behaves correctly with respect to some specification, implicit or explicit, of its desired behavior.
+#+end_quote
+

@@ -1,0 +1,46 @@
+:PROPERTIES:
+:ID:       f4f43f6b-f684-4df9-9e35-943375dce600
+:END:
+#+TITLE:       Estudos e Conceitos pela frente
+#+DATE:        [2026-11-19 qui]
+#+DESCRIPTION: Estudos e conceitos que deverão formar notas no futuro; anotações gerais
+#+STATUS:      semente
+#+NOTE_TYPE:   sintese
+#+FILETAGS:    :computer-science/general:mathematics/general:general:sintese:publish:
+
+#+begin_definicao
+versão atual: ~1.0.0~
+data          ~2026-11-19~
+#+end_definicao
+
+* Ciência da Computação
+** Semântica Formal
+
+#+author:  Benjamin C. Peirce
+#+text:    Types and Programming Languages
+#+chapter: 1.1
+#+pages:   1
+#+begin_quotation
+Modern software engineering recognizes a broad range of /formal methods/ for helping ensure that a system behaves correctly with respect to some specification, implicit or explicit, of its desired behavior.
+#+end_quotation
+
+Alguns métodos formais são a lógica de Hoare, as linguagens de especificação algébrica, as lógicas modais e a semântica denotacional...
+
+
+* =>TODO
+- =[seed]= ~definição~ Métodos Formais
+- =[growing]= ~tipologia~ /Frameworks/ de Métodos Formais =lista=
+  - ~definição~ Lógica de Hoare
+  - ~definição~ Linguagem de Especificação Algébrica
+  - ~definição~ Lógica Modal
+  - ~definição~ Semântica Denotacional
+  - =[seed]= ~definição~ Sistema de Tipos
+- ~definição~ programa 
+
+
+~[pessoas]~, ~[definições]~ em
+
+#+ATTR_CITA: :ref pierce-2002-tapl :cap 1.1 :pag 2 :lang en
+#+begin_quote
+Major landmarks in this area include Russell’s original =ramified theory of types= (Whitehead and Russell, 1910), Ramsey’s =simple theory of types= (1925) — the basis of Church’s =simply typed lambda-calculus= (1940) — Martin-Löf’s =constructive type theory= (1973, 1984), and Berardi, Terlouw, and Barendregt’s =pure type systems= (Berardi, 1988; Terlouw, 1989; Barendregt, 1992).
+#+end_quote

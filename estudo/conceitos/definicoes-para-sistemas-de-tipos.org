@@ -1,0 +1,75 @@
+:PROPERTIES:
+:ID:       computer-science--formal-methods--type-systems--definition
+:END:
+#+TITLE: Definições para Sistemas de Tipos
+#+DATE: [2026-11-19 qui]
+#+DESCRIPTION: 
+#+STATUS: semente
+#+NOTE_TYPE: conceito
+#+FILETAGS: :computer-science/formal-methods:publish:conceito:
+
+* Definições
+Sistemas de Tipos são [[id:computer-science--formal-methods--frameworks][um tipo de /framework/ em Métodos Formais]]
+
+** Uma Definição Geral (Peirce, 2002)
+#+ATTR_CITA: :ref pierce-2002-tapl :cap 1.1 :pag 1 :lang en
+#+begin_quote
+A type system is a tractable syntactic method for proving the absence of certain program behaviors by classifying phrases according to the kinds of values they compute.
+#+end_quote
+
+*** Breve Histórico da /Teoria dos Tipos/
+São, portantom /ferramentas/ para o estudo de =[programas]= e para a análise de Linguagens de Programação. São frutos da =[Teoria dos Tipos]=, um vasto campo interseccional da Lógica, da Matemática e da Filosofia, formalizado no início do século XX por =[Bertrand Russel]= ~(1902... )~ para o tratamento de paradoxos na formalização das fundações da Matemática. Ao longo do século XX, /tipos/ foram utilizados como ferramentas na =[Teoria das Provas]= e permearam tanto a Filosofia quanto a Ciência, no geral.
+
+#+ATTR_CITA: :ref pierce-2002-tapl :cap 1.1 :pag 2 :lang en
+#+begin_quote
+Major landmarks in this area include Russell’s original =ramified theory of types= (Whitehead and Russell, 1910), Ramsey’s =simple theory of types= (1925) — the basis of Church’s =simply typed lambda-calculus= (1940) — Martin-Löf’s =constructive type theory= (1973, 1984), and Berardi, Terlouw, and Barendregt’s =pure type systems= (Berardi, 1988; Terlouw, 1989; Barendregt, 1992).
+#+end_quote
+
+*** Classificação quanto à Praticidade
+Em Ciência da Computação, podemos dividir os sistemas de tipos em duas categorias, *para fins pragmáticos*,
+
+- aplicados à Linguagens de Programação e sua implementação; e
+- relacionados à =[Correspondência de Curry-Howard]=, ao =[Cálculo Lambda Puramente Tipado]= e às variedades de lógicas
+
+mas ambas comunidades utilizam conceitos, notações e técnicas em comum, apesar da diferença de orientação.
+
+#+begin_nota
+É dada muita importância, no estudo dos cálculos lambda tipados, para provar propriedades de *terminação* para qualquer computação bem-tipada. Entretanto, na implementação de linguagens de programação, muitas vezses isto é deixado de lado para possibilitar a implementação de =[definições de funções recursivas]=.
+
+*** Para que serve um sistema de tipos
+Sistemas de Tipos servem, dentre outras finalidades, à *classificação* de termos de uma linguagem, de acordo com *os valores que os termos produzem* (uma vez reduzidos à sua =[forma normal]=, isto é, quando /executados/). Um sistema de tipos pode ser visto como uma maneira de *computar, /aproximada/ e /estaticamente/, o comportamento de um termo em um programa.*
+
+#+begin_nota
+Dizemos que sistemas de tipos computam tipos à termos de forma *composicional*, isto é, (em sistemas /estáticos/) o *tipo de uma expressão* depende única e exclusivamente dos *tipos de suas sub-expressões*.
+#+end_nota
+
+** Sistemas de Tipos Estáticos e Dinâmicos
+Um sistema de tipos é [[id: ...][dito estático] ... ] quando ..., e é [[id: ...][denominado dinâmico] ... ] ou *latente* quando /type tags/, ou *rótulos de tipos*, são utilizados para diferenciar estruturas no =[heap]=.
+
+#+ATTR_CITA: :ref pierce-2002-tapl :cap 1.1 :pag 2 :lang en
+#+begin_quote
+Terms like “dynamically typed” are arguably misnomers and should probably be replaced by “dynamically checked,” but the usage is standard.
+#+end_quote
+
+Sistemas de tipagem estáticos também são ditos *conservativos* (ou conservadores?) pois são capazes de provar a *ausência* de alguns tipos de comportamentos indesejados em programas, mas não necessariamente conseguem provar sua presença; portanto, podem rejeitar programas que se comportam de maneira adequada em tempo de execução, mas que /parecem/ mal-tipados.
+
+#+ATTR_CITA: :ref pierce-2002-tapl :cap 1.1 :pag 2 :lang en
+#+begin_quote
+The tension between conservativity and expressiveness is a fundamental fact of life in the design of type systems. The desire to allow more programs to be typed — by assigning more accurate types to their parts — isthe main force driving research in the field.
+#+end_quote
+
+A maioria dos sistemas de tipos são capazes de garantir que *alguns* tipos de comportamentos indesejados ocasionarão um programa a ser rejeitado por ser mal-formado, mas *não garantem que todos os erros serão encontrados*:
+
+#+ATTR_CITA: :ref pierce-2002-tapl :cap 1.1 :pag 3 :lang en
+#+begin_quote
+A related point is that the relatively straightforward analyses embodied in most type systems are not capable of proscribing arbitrary undesired program behaviors; they can only guarantee that well-typed programs are free from certain kinds of misbehavior. For example, most type systems can check statically that the arguments to primitive arithmetic operations are always numbers, that the receiver object in a method invocation always provides the requested method, etc., but not that the second argument to the division operation is non-zero, or that array accesses are always within bounds.
+#+end_quote
+
+Os comportamentos indesejados que *podem ser eliminados pelo sistema de tipo* em uma dada linguagem são ditos =[*erros de tipo em tempo de execução*]= (/run-time type errors/):
+
+#+ATTR_CITA: :ref pierce-2002-tapl :cap 1.1 :pag 3 :lang en
+#+begin_quote
+The bad behaviors that can be eliminated by the type system in a given language are often called run-time type errors. It is important to keep in mind that this set of behaviors is a per-language choice: although there is substantial overlap between the behaviors considered to be run-time type errors in different languages, in principle each type system comes with a definition of the behaviors it aims to prevent. The *safety* (or *soundness*) of each type system must be judged with respect to its own set of run-time errors.
+#+end_quote
+
+>> =[Segurança em Sistemas de Tipos]=.

@@ -1,0 +1,38 @@
+:PROPERTIES:
+:ID:       computer-science--formal-methods--synthesis
+:END:
+#+TITLE: Introdução aos Métodos Formais
+#+DATE: [2026-11-19 qui]
+#+DESCRIPTION: 
+#+STATUS: semente
+#+NOTE_TYPE: sintese
+#+FILETAGS: :computer-science/formal-methods:sintese:publish
+
+[[id:computer-science--formal-methods--definitions][Métodos Formais]] são ... utilizados para garantir propriedades de sistemas e provar propriedades de correção. [[id:computer-science--formal-methods--frameworks][Diversas /frameworks/]], com graus diferentes de flexibilidade de implementação e de poder.
+Os métodos formais clássicos são técnicas de alto poder de prova e são capazes de expressar, mediante suas robustas teorias, propriedades de correção para sistemas diversos; sua implementação, entretanto, tende a ser difícil e laboriosa.
+Os ditos /métodos formais leves/, *lightweight formal methods*, são técnicas suficientemente modestas para serem implementadas em verificadores automáticos, compiladores, /linkers/ e analisadores de programas. Dentre estes métodos, destacamos os [[id:computer-science--formal-methods--type-systems--definition][sistemas de tipos]].
+Além destes métodos, também podemos citar os sistemas de monitoramento contínuo (*run-time monitoring systems*) ...
+
+Os [[id: ...][sistemas de tipos] ] são, segundo [[id:ref-peirce...][Peirce (2002)],
+
+#+ATTR_CITA: :ref pierce-2002-tapl :cap 1.1 :pag 1 :lang en
+#+begin_quote
+A type system is a tractable syntactic method for proving the absence of certain program behaviors by classifying phrases according to the kinds of values they compute.
+#+end_quote
+
+São, portanto, /ferramentas/ para o estudo de =[programas]= e para a análise de Linguagens de Programação. São frutos da =[Teoria dos Tipos]=, um vasto campo interseccional da Lógica, da Matemática e da Filosofia, formalizado no início do século XX por =[Bertrand Russel]= ~(1902... )~ para o tratamento de paradoxos na formalização das fundações da Matemática. Ao longo do século XX, /tipos/ foram utilizados como ferramentas na =[Teoria das Provas]= e permearam tanto a Filosofia quanto a Ciência, no geral.
+
+#+ATTR_CITA: :ref pierce-2002-tapl :cap 1.1 :pag 2 :lang en
+#+begin_quote
+Major landmarks in this area include Russell’s original =ramified theory of types= (Whitehead and Russell, 1910), Ramsey’s =simple theory of types= (1925) — the basis of Church’s =simply typed lambda-calculus= (1940) — Martin-Löf’s =constructive type theory= (1973, 1984), and Berardi, Terlouw, and Barendregt’s =pure type systems= (Berardi, 1988; Terlouw, 1989; Barendregt, 1992).
+#+end_quote
+
+
+ 
+* Notas de estudo
+#+BEGIN: notas-por-tag :tag "computer-science/formal-methods" :tipo "estudo" :resumo t
+#+END:
+
+* Relacionadas
+#+BEGIN: notas-relacionadas :limite 5
+#+END:

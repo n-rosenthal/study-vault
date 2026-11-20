@@ -1,0 +1,28 @@
+:PROPERTIES:
+:ID:       computer-science--formal-methods--frameworks
+:END:
+#+TITLE: /Frameworks/ de Métodos Formais
+#+DATE: [2026-11-19 qui]
+#+DESCRIPTION: 
+#+STATUS: semente
+#+NOTE_TYPE: conceito
+#+FILETAGS: :computer-science/formal-methods:publish:conceito:
+
+Existem diversas /frameworks/ para [[id:computer-science--formal-methods--definitions][Métodos Formais]] Através destas técnicas, podemos garantir aspectos do comportamento de sistemas e expressar propriedades gerais de correção.
+
+Os métodos formais clássicos são técnicas de alto poder de prova e são capazes de expressar, mediante suas robustas teorias, propriedades de correção para sistemas diversos; sua implementação, entretanto, tende a ser difícil e laboriosa.
+Os ditos /métodos formais leves/, *lightweight formal methods*, são técnicas suficientemente modestas para serem implementadas em verificadores automáticos, compiladores, /linkers/ e analisadores de programas. Dentre estes métodos, destacamos os *sistemas de tipos*.
+
+* Lista de /Frameworks/ 
+** Métodos Formais Clássicos
+- =[Lógica de Hoare]=
+- =[Linguagens de Especificação Algébrica]=
+- =[Lógicas Modais]=
+- =[Semântica Denotacional]=
+
+** /Lightweight Formal Methods/
+- =[Model Checkers]=
+- =[Sistemas de Tipos]=
+
+** Sistemas de /Run-Time Monitoring/
+- ?
