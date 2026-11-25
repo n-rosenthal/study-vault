@@ -1,99 +1,495 @@
 :PROPERTIES:
 :ID:       7975ef99-5b53-4c3a-9801-d0e67f67f68e
 :END:
-#+TITLE: Contextos para implementação de Linguagens de Programação
+#+TITLE: Contextos para Implementação de Linguagens de Programação
 #+DATE: [2026-11-25 qua]
-#+DESCRIPTION: 
+#+DESCRIPTION: Estudo sobre contextos, bindings e ambientes semânticos.
 #+STATUS: semente
 #+NOTE_TYPE: estudo
-#+FILETAGS: :computer-science/formal-semantics:computer-science/programming-languages:project/simple-languages:publish:estudo:
+#+FILETAGS: :programming-languages:semantics:rust:context:
 
 * Definições
 
+** Binding
+
+Um /binding/ é uma associação entre um identificador e uma informação.
+
+\[
+  x \mapsto b
+\]
+
+O identificador pode representar uma variável, função, constante ou
+qualquer outro elemento nomeado da linguagem.
+
+O valor associado pode representar:
+
+- um tipo;
+- um termo;
+- um valor;
+- uma definição;
+- uma substituição;
+- uma informação específica da linguagem.
+
+** Contexto
+
+Um contexto é uma coleção de bindings que registra informações necessárias
+à interpretação de uma expressão.
+
+Na notação da semântica formal, é frequentemente representado por Γ.
+
+\[
+  \Gamma = [x_1 \mapsto b_1,\ldots,x_n \mapsto b_n]
+\]
+
+A operação de extensão adiciona uma associação:
+
+\[
+  \Gamma' = \Gamma, x \mapsto b
+\]
+
+A associação recém-adicionada passa a ser a mais recente.
+
+** Contextos persistentes
+
+Um contexto persistente é uma estrutura na qual operações de extensão
+produzem novos contextos sem modificar os anteriores.
+
+\[
+  \Gamma' = \operatorname{extend}(\Gamma,x,b)
+\]
+
+A estrutura original continua disponível.
+
+Essa propriedade é particularmente útil para representar escopos lexicais:
+cada extensão pode representar a entrada em um novo escopo.
+
+** Sombreamento
+
+Sombreamento ocorre quando uma associação mais recente utiliza um
+identificador já presente no contexto.
+
+Considere:
+
+\[
+  \Gamma_0 = [x \mapsto 1]
+\]
+
+\[
+  \Gamma_1 = \Gamma_0, x \mapsto 2
+\]
+
+A consulta no contexto mais recente deve retornar:
+
+\[
+  \operatorname{lookup}(\Gamma_1,x)=2
+\]
+
+O binding anterior continua existindo na estrutura persistente, mas deixa
+de ser o resultado da consulta nominal.
+
 * Implementação
-Agora implementaremos /contextos/ em Rust, como parte do projeto ~simple-languages~. Todo =trait= ~Language~ necessita de uma definição para seu ~Context~ [...]
-** /Header/ e /crates/
 
-=common/Context.rs= usa as =crates= para implementação em LaTeX porque [...]
+** Reutilização de LinkedList
+
+A estrutura =LinkedList<T>= já implementa uma lista encadeada persistente
+com armazenamento de nomes e valores.
+
+Sua representação conceitual é:
 
 #+begin_src rust
-//! Contextos (Γ): associam nomes a bindings.
-//!
-//! O binding `B` depende do uso: um tipo na tipagem (`Γ ⊢ t : T`), um
-//! valor num ambiente de avaliação, `()` num contexto só de nomes.
-//!
-//! O contexto é uma lista encadeada *persistente*: [`Context::extend`]
-//! devolve um contexto novo em O(1) e deixa o original intacto. Assim
-//! não há `push`/`pop` para restaurar, uma derivação pode guardar o Γ de
-//! cada nó, e fechamentos podem compartilhar ambientes.
-//!
-//! `Rc` torna o tipo `!Send`. Se um dia precisar de threads, troque por
-//! `Arc`; a API não muda.
-
-use std::fmt;
-use std::rc::Rc;
-
-use crate::common::latex::ident;
-use crate::common::ToLatex;
+pub struct LinkedList<T> {
+    head: Option<Rc<Node<T>>>,
+    len: usize,
+}
 #+end_src
 
-** Ligações (/Bindings/)
-Uma ligação \( B \) é
-
+Cada nó contém:
 
 #+begin_src rust
-pub struct Binding<A, B> {
-    ...
-}
-#+end_src 
-
-** Nós: contextos enquanto listas
-Uma das formas mais clássicas, e primárias, de implementação de contextos utiliza listas encadeadas.
-Um contexto \( \mathbb{C} \) é um ponteiro \( \mathbb{head} para o início de uma lista encadeada de /possíveis/ nós \( \mathbb{n} \) de ligações \( \mathbb{b} \), mais o seu tamanho, =i.e.=
-
-#+begin_src rust
-
-// Nó de uma lista encadeada de ligações B
-struct Node<B> {
+pub struct Node<T> {
     name: String,
-    binding: B,
-    parent: Option<Rc<Node<B>>>,
+    value: T,
+    parent: Option<Rc<Node<T>>>,
 }
+#+end_src
 
-// Contexto sobre uma definição ~B~ de ~Binding<A, B>~
+A estrutura já é responsável por:
+
+- armazenamento dos elementos;
+- compartilhamento estrutural;
+- extensão persistente;
+- iteração;
+- consulta por nome;
+- consulta por índice;
+- destruição da estrutura.
+
+Portanto, a implementação de =Context= não deve reproduzir essas
+responsabilidades.
+
+** Representação de Context
+
+A representação do contexto é deliberadamente simples:
+
+#+begin_src rust
 pub struct Context<B> {
-    head: Option<      // possível valor, ou nada
-           Rc<         // ponteiro para
-            Node<B>    // nó de uma ligação 
-           >
-          >,
-    len: usize,        // tamanho da lista encadeada
+    bindings: LinkedList<B>,
 }
-#+end_src 
+#+end_src
 
+O nome está armazenado no nó da lista, enquanto o valor armazenado é o
+binding.
 
-O contexto vazio \( \mathbb{C}_\emptyset \) é definido pelo construtor
+Assim, não precisamos de uma segunda estrutura:
 
 #+begin_src rust
+// Desnecessário quando LinkedList já armazena nomes.
+pub struct Binding<B> {
+    pub name: String,
+    pub value: B,
+}
+#+end_src
 
-// Implementação para um tipo de ligação B
-// de Contexto sobre ligações B
-impl<B> Context<B> {
-    // Construtor do contexto vazio
-    pub fn empty() -> Self {
-        Self { head: None, len: 0 }
+A associação entre nome e valor já é fornecida pela própria lista.
+
+** Responsabilidades
+
+A separação de responsabilidades é:
+
+| Componente    | Responsabilidade                         |
+|---------------+------------------------------------------|
+| =LinkedList=  | Estrutura persistente e armazenamento    |
+| =Context=     | Operações semânticas sobre bindings      |
+| =Node=        | Representação interna de um elemento     |
+| =Rc=          | Compartilhamento estrutural              |
+
+O contexto não precisa conhecer a implementação dos nós.
+
+* Operações
+
+** Construção
+
+Um contexto vazio é construído a partir de uma lista vazia:
+
+#+begin_src rust
+pub fn empty() -> Self {
+    Self {
+        bindings: LinkedList::empty(),
     }
+}
 #+end_src
 
-Acessamos o tamanho do contexto pela função abaixo, e a utilizamos para definir o predicado ~is_empty~, verdadeiro quando não há ligação \( \mathbb{b} \) alguma no contexto atual.
+** Extensão
+
+A extensão delega a operação à lista:
 
 #+begin_src rust
-pub fn len(&self) -> usize {
-    self.len
-}
-
-
-pub fn is_empty(&self) -> bool {
-    self.len == 0
+pub fn extend(
+    &self,
+    name: impl Into<String>,
+    binding: B,
+) -> Self {
+    Self {
+        bindings: self.bindings.extend(binding, name),
+    }
 }
 #+end_src
+
+O contexto original não é modificado.
+
+** Consulta por identificador
+
+A consulta nominal também é delegada:
+
+#+begin_src rust
+pub fn lookup(&self, name: &str) -> Option<&B> {
+    self.bindings.lookup(name)
+}
+#+end_src
+
+Como a lista percorre os elementos do mais recente ao mais antigo, o
+primeiro binding encontrado corresponde ao binding visível.
+
+** Consulta por índice
+
+A consulta por índice utiliza a ordem mais recente primeiro:
+
+#+begin_src rust
+pub fn lookup_index(&self, index: usize) -> Option<&B> {
+    self.bindings
+        .iter()
+        .nth(index)
+        .map(|(_, binding)| binding)
+}
+#+end_src
+
+Essa operação é adequada à implementação de índices de De Bruijn.
+
+** Iteração
+
+A iteração preserva as duas ordens úteis:
+
+#+begin_src rust
+/// Mais recente para mais antigo.
+pub fn iter(&self) -> impl Iterator<Item = (&str, &B)> {
+    self.bindings.iter()
+}
+
+/// Mais antigo para mais recente.
+pub fn bindings(&self) -> Vec<(&str, &B)> {
+    self.bindings.values()
+}
+#+end_src
+
+A escolha da ordem depende da operação semântica.
+
+Para resolução de variáveis e índices de De Bruijn, a ordem mais recente
+primeiro é conveniente.
+
+Para exibição e reconstrução da sequência de extensões, a ordem mais antiga
+primeiro pode ser mais apropriada.
+
+* Contextos genéricos
+
+A abstração pode ser utilizada para diferentes categorias de informação.
+
+** Contexto de tipos
+
+\[
+  \Gamma = [x_1:T_1,\ldots,x_n:T_n]
+\]
+
+#+begin_src rust
+pub type TypeContext<T> = Context<T>;
+#+end_src
+
+Utilização:
+
+#+begin_src rust
+let context: TypeContext<Type> = Context::empty()
+    .extend("x", Type::Integer)
+    .extend("y", Type::Boolean);
+#+end_src
+
+** Contexto de valores
+
+\[
+  \rho = [x_1 \mapsto v_1,\ldots,x_n \mapsto v_n]
+\]
+
+#+begin_src rust
+pub type ValueContext<V> = Context<V>;
+#+end_src
+
+** Contexto de termos
+
+#+begin_src rust
+pub type TermContext<T> = Context<T>;
+#+end_src
+
+Pode armazenar definições nomeadas, expressões ou termos associados a
+identificadores.
+
+** Contexto de substituições
+
+#+begin_src rust
+pub type SubstitutionContext<S> = Context<S>;
+#+end_src
+
+Pode representar associações utilizadas durante operações de substituição.
+
+** Ambiente de execução
+
+#+begin_src rust
+pub type Environment<V> = Context<V>;
+#+end_src
+
+Um ambiente de execução associa variáveis a valores.
+
+* Relação com a semântica formal
+
+** Julgamentos de tipagem
+
+Um julgamento de tipagem tem a forma:
+
+\[
+  \Gamma \vdash t : T
+\]
+
+O contexto Γ fornece os tipos das variáveis livres de t.
+
+Por exemplo, uma regra de variável pode ser representada por:
+
+\[
+\frac{x:T \in \Gamma}
+     {\Gamma \vdash x:T}
+\]
+
+A operação =lookup= fornece a associação necessária para verificar a
+premissa.
+
+** Avaliação
+
+Na semântica operacional, um ambiente pode ser representado por:
+
+\[
+  \rho = [x_1 \mapsto v_1,\ldots,x_n \mapsto v_n]
+\]
+
+A avaliação de uma variável utiliza o ambiente:
+
+\[
+  \langle x,\rho\rangle \Downarrow \rho(x)
+\]
+
+** Escopos lexicais
+
+A persistência permite representar diferentes escopos sem modificar
+ambientes anteriores.
+
+Por exemplo:
+
+\[
+  \rho_0 = []
+\]
+
+\[
+  \rho_1 = \rho_0, x \mapsto 10
+\]
+
+\[
+  \rho_2 = \rho_1, y \mapsto 20
+\]
+
+Cada ambiente preserva a estrutura anterior.
+
+* Índices de De Bruijn
+
+Índices de De Bruijn substituem nomes de variáveis por índices que
+representam a distância até a abstração correspondente.
+
+Considere:
+
+\[
+  \Gamma = [x \mapsto b_x,\; y \mapsto b_y,\; z \mapsto b_z]
+\]
+
+Com o binding mais recente no índice zero:
+
+| Índice | Variável |
+|--------+----------|
+| 0      | z        |
+| 1      | y        |
+| 2      | x        |
+
+A consulta por índice é:
+
+\[
+  \operatorname{lookupIndex}(\Gamma,i)
+\]
+
+Essa convenção deve ser mantida consistentemente nas operações de
+deslocamento, substituição e interpretação de termos nameless.
+
+* Estratégias de armazenamento
+
+** LinkedList
+
+A implementação baseada em lista persistente é apropriada quando:
+
+- é necessário preservar versões anteriores do contexto;
+- há muitos escopos aninhados;
+- sombreamento precisa ser preservado;
+- consultas por índice são frequentes;
+- a ordem de inserção possui significado semântico.
+
+** HashMap
+
+A implementação baseada em mapa é apropriada quando:
+
+- a consulta por identificador é predominante;
+- não é necessário preservar associações anteriores;
+- a substituição de bindings é aceitável;
+- a ordem dos elementos não é semanticamente relevante.
+
+As duas implementações não devem ser consideradas semanticamente
+intercambiáveis sem que suas diferenças sejam explicitadas.
+
+* Testes e propriedades
+
+A implementação deve verificar as seguintes propriedades.
+
+** Persistência
+
+A extensão não modifica o contexto original:
+
+\[
+  \Gamma' = \operatorname{extend}(\Gamma,x,b)
+\]
+
+\[
+  \Gamma \neq \Gamma'
+\]
+
+quando a extensão adiciona uma associação nova.
+
+** Sombreamento
+
+Uma associação mais recente deve prevalecer na consulta nominal:
+
+\[
+  \operatorname{lookup}(
+    \Gamma,x
+  ) = b_{\text{recente}}
+\]
+
+** Indexação
+
+O índice zero deve representar o binding mais recente:
+
+\[
+  \operatorname{lookupIndex}(\Gamma,0)
+  =
+  \operatorname{last}(\Gamma)
+\]
+
+considerando a sequência de extensões.
+
+** Ordem de iteração
+
+As operações de iteração devem respeitar as convenções documentadas.
+
+** Igualdade
+
+A igualdade estrutural deve considerar os nomes, os valores e a ordem
+dos bindings.
+
+* Decisões de implementação
+
+1. =Context<B>= utiliza =LinkedList<B>=.
+2. A lista é a única responsável por armazenar os nomes e os valores.
+3. Não há uma segunda implementação de =Node=.
+4. Não há gerenciamento próprio de =Rc= em =Context=.
+5. Não há implementação própria de =Drop= em =Context=.
+6. A extensão é persistente.
+7. O binding mais recente tem precedência em consultas nominais.
+8. O índice zero corresponde ao binding mais recente.
+9. A implementação baseada em mapa possui semântica documentada
+   separadamente.
+10. Os contextos de tipos, valores, termos e substituições são
+    especializações da abstração genérica.
+
+* Referências internas
+
+- [[file:../../LinkedList.rs][LinkedList]]
+- [[file:traits.rs][Interface abstrata de contextos]]
+- [[file:linked.rs][Implementação persistente]]
+- [[file:map.rs][Implementação baseada em mapa]]
+
+* Próximos passos
+
+** TODO Revisar a interface abstrata e suas restrições de tipos.
+** TODO Integrar os contextos ao sistema de tipagem.
+** TODO Integrar os contextos à semântica operacional.
+** TODO Verificar a compatibilidade com termos nameless.
+** TODO Implementar suporte a representação LaTeX.
+** TODO Consolidar testes de persistência, sombreamento e indexação.

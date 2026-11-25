@@ -1,0 +1,202 @@
+:PROPERTIES:
+:ID:       4689e314-1712-4192-9753-59cc4a549ed6
+:END:
+#+TITLE: Implementando Listas Encadeadas em Rust
+#+DATE: [2026-11-25 qua]
+#+DESCRIPTION:
+#+STATUS: semente
+#+NOTE_TYPE: estudo
+#+FILETAGS: :computer-science/formal-semantics:computer-science/programming-languages:project/simple-languages:publish:estudo:
+
+* Implementação
+
+#+begin_src rust
+//! Listas Encadeadas (LinkedList)
+
+use std::fmt;
+use std::rc::Rc;
+
+pub struct Node<T> {
+    name: String,
+    value: T,
+    parent: Option<Rc<Node<T>>>,
+}
+
+/// Lista encadeada persistente, implementada com compartilhamento estrutural.
+pub struct LinkedList<T> {
+    head: Option<Rc<Node<T>>>,
+    len: usize,
+}
+
+impl<T> LinkedList<T> {
+    /// O contexto vazio (Γ = ∅).
+    pub fn empty() -> Self {
+        Self { head: None, len: 0 }
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// Extensão de uma lista encadeada: L, x:T.
+    ///
+    /// Cria uma nova lista cujo primeiro nó contém o novo binding
+    /// e cujo restante é compartilhado com a lista original.
+    pub fn extend(&self, value: T, name: impl Into<String>) -> Self {
+        Self {
+            head: Some(Rc::new(Node {
+                name: name.into(),
+                value,
+                parent: self.head.clone(),
+            })),
+            len: self.len + 1,
+        }
+    }
+
+    /// Iterador do binding mais recente ao mais antigo.
+    pub fn iter(&self) -> Iter<'_, T> {
+        Iter {
+            next: self.head.as_deref(),
+        }
+    }
+
+    /// Retorna os bindings do mais antigo ao mais recentemente adicionado.
+    pub fn values(&self) -> Vec<(&str, &T)> {
+        let mut all: Vec<_> = self.iter().collect();
+        all.reverse();
+        all
+    }
+
+    /// Retorna o valor do binding mais recente associado a `name`.
+    /// Em caso de sombreamento, o binding mais interno prevalece.
+    pub fn lookup(&self, name: &str) -> Option<&T> {
+        self.iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, value)| value)
+    }
+
+    pub fn contains(&self, name: &str) -> bool {
+        self.lookup(name).is_some()
+    }
+
+    /// Retorna o binding na posição `index` (0 é o mais recente).
+    pub fn get(&self, index: usize) -> Option<(&str, &T)> {
+        self.iter().nth(index)
+    }
+}
+
+/// Iterador sobre uma lista encadeada.
+pub struct Iter<'a, T> {
+    next: Option<&'a Node<T>>,
+}
+
+impl<'a, T> Iterator for Iter<'a, T> {
+    type Item = (&'a str, &'a T);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let node = self.next?;
+        self.next = node.parent.as_deref();
+
+        Some((node.name.as_str(), &node.value))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (0, None)
+    }
+}
+
+impl<T> Clone for LinkedList<T> {
+    fn clone(&self) -> Self {
+        Self {
+            head: self.head.clone(),
+            len: self.len,
+        }
+    }
+}
+
+impl<T> Default for LinkedList<T> {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
+/// Destruição iterativa.
+///
+/// O Drop recursivo padrão de uma lista longa de Rc pode estourar
+/// a pilha. A destruição iterativa evita esse problema quando
+/// os nós não estão compartilhados com outras listas.
+impl<T> Drop for LinkedList<T> {
+    fn drop(&mut self) {
+        let mut current = self.head.take();
+
+        while let Some(rc) = current {
+            match Rc::try_unwrap(rc) {
+                Ok(mut node) => {
+                    current = node.parent.take();
+                }
+                Err(_) => break,
+            }
+        }
+    }
+}
+
+impl<T: PartialEq> PartialEq for LinkedList<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.len == other.len && self.iter().eq(other.iter())
+    }
+}
+
+impl<T: Eq> Eq for LinkedList<T> {}
+
+impl<T: fmt::Debug> fmt::Debug for LinkedList<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list()
+            .entries(self.values())
+            .finish()
+    }
+}
+#+end_src
+
+** Representação
+
+#+begin_src rust
+/// Representação textual de uma lista encadeada.
+impl<T: fmt::Display> fmt::Display for LinkedList<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.is_empty() {
+            return f.write_str("∅");
+        }
+
+        for (i, (name, value)) in self.values().into_iter().enumerate() {
+            if i > 0 {
+                f.write_str(", ")?;
+            }
+
+            write!(f, "{name}:{value}")?;
+        }
+
+        Ok(())
+    }
+}
+
+/// Conversão de uma lista encadeada para sua representação em LaTeX.
+impl<T: ToLatex> ToLatex for LinkedList<T> {
+    fn to_latex(&self) -> String {
+        if self.is_empty() {
+            return r"\emptyset".to_string();
+        }
+
+        self.values()
+            .into_iter()
+            .map(|(name, value)| {
+                format!("{}{{:}}{}", ident(name), value.to_latex())
+            })
+            .collect::<Vec<_>>()
+            .join(r",\,")
+    }
+}
+#+end_src
