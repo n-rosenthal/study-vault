@@ -6,7 +6,7 @@
 #+DESCRIPTION: Estudo sobre contextos, bindings e ambientes semânticos.
 #+STATUS: semente
 #+NOTE_TYPE: estudo
-#+FILETAGS: :programming-languages:semantics:rust:context:
+#+FILETAGS: :programming-languages:semantics:rust:context:publish:estudo:
 
 * Definições
 
