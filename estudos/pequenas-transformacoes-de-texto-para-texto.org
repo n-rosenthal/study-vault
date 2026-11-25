@@ -1,7 +1,7 @@
 :PROPERTIES:
 :ID:       56c2971c-0de4-490b-a07d-3d3753570579
 :END:
-#+TITLE: pequenas transformações de texto para texto
+#+TITLE: pequenas transformações sobre textos
 #+DATE: [2026-11-24 ter]
 #+DESCRIPTION:
 #+STATUS: semente

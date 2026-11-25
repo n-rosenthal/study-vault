@@ -1,0 +1,99 @@
+:PROPERTIES:
+:ID:       7975ef99-5b53-4c3a-9801-d0e67f67f68e
+:END:
+#+TITLE: Contextos para implementação de Linguagens de Programação
+#+DATE: [2026-11-25 qua]
+#+DESCRIPTION: 
+#+STATUS: semente
+#+NOTE_TYPE: estudo
+#+FILETAGS: :computer-science/formal-semantics:computer-science/programming-languages:project/simple-languages:publish:estudo:
+
+* Definições
+
+* Implementação
+Agora implementaremos /contextos/ em Rust, como parte do projeto ~simple-languages~. Todo =trait= ~Language~ necessita de uma definição para seu ~Context~ [...]
+** /Header/ e /crates/
+
+=common/Context.rs= usa as =crates= para implementação em LaTeX porque [...]
+
+#+begin_src rust
+//! Contextos (Γ): associam nomes a bindings.
+//!
+//! O binding `B` depende do uso: um tipo na tipagem (`Γ ⊢ t : T`), um
+//! valor num ambiente de avaliação, `()` num contexto só de nomes.
+//!
+//! O contexto é uma lista encadeada *persistente*: [`Context::extend`]
+//! devolve um contexto novo em O(1) e deixa o original intacto. Assim
+//! não há `push`/`pop` para restaurar, uma derivação pode guardar o Γ de
+//! cada nó, e fechamentos podem compartilhar ambientes.
+//!
+//! `Rc` torna o tipo `!Send`. Se um dia precisar de threads, troque por
+//! `Arc`; a API não muda.
+
+use std::fmt;
+use std::rc::Rc;
+
+use crate::common::latex::ident;
+use crate::common::ToLatex;
+#+end_src
+
+** Ligações (/Bindings/)
+Uma ligação \( B \) é
+
+
+#+begin_src rust
+pub struct Binding<A, B> {
+    ...
+}
+#+end_src 
+
+** Nós: contextos enquanto listas
+Uma das formas mais clássicas, e primárias, de implementação de contextos utiliza listas encadeadas.
+Um contexto \( \mathbb{C} \) é um ponteiro \( \mathbb{head} para o início de uma lista encadeada de /possíveis/ nós \( \mathbb{n} \) de ligações \( \mathbb{b} \), mais o seu tamanho, =i.e.=
+
+#+begin_src rust
+
+// Nó de uma lista encadeada de ligações B
+struct Node<B> {
+    name: String,
+    binding: B,
+    parent: Option<Rc<Node<B>>>,
+}
+
+// Contexto sobre uma definição ~B~ de ~Binding<A, B>~
+pub struct Context<B> {
+    head: Option<      // possível valor, ou nada
+           Rc<         // ponteiro para
+            Node<B>    // nó de uma ligação 
+           >
+          >,
+    len: usize,        // tamanho da lista encadeada
+}
+#+end_src 
+
+
+O contexto vazio \( \mathbb{C}_\emptyset \) é definido pelo construtor
+
+#+begin_src rust
+
+// Implementação para um tipo de ligação B
+// de Contexto sobre ligações B
+impl<B> Context<B> {
+    // Construtor do contexto vazio
+    pub fn empty() -> Self {
+        Self { head: None, len: 0 }
+    }
+#+end_src
+
+Acessamos o tamanho do contexto pela função abaixo, e a utilizamos para definir o predicado ~is_empty~, verdadeiro quando não há ligação \( \mathbb{b} \) alguma no contexto atual.
+
+#+begin_src rust
+pub fn len(&self) -> usize {
+    self.len
+}
+
+
+pub fn is_empty(&self) -> bool {
+    self.len == 0
+}
+#+end_src
