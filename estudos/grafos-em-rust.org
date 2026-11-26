@@ -1,0 +1,103 @@
+
+:PROPERTIES:
+:ID:       8f1b3354-e0c9-4f63-be3b-c8ae585f4ebf
+:END:
+#+TITLE: Grafos em Rust
+#+DATE: [2026-11-26 qui]
+#+DESCRIPTION: 
+#+STATUS: semente
+#+NOTE_TYPE: estudo
+#+FILETAGS: :programming-language/rust:implementation:publish:estudo:
+
+* Implementação
+** /Crates/
+#+begin_src rust
+use std::cmp::Reverse;
+use std::collections::{BinaryHeap, VecDeque};
+use std::error::Error;
+use std::fmt;
+use std::ops::Add;
+use std::rc::Rc;
+
+#+end_src
+
+** Erros
+Atualmente, as condições de erro implicam a tentativa de construção de um grafo impossível, ou mal-formado. Seja \( G = (N, A) \) um grafo, então
+1. =Erro= ~RightNodeNotInGraph~ se \( a \in A \land a' \notin A \implies \false \), isto é, se a primeira componente de um arco for um nó que /está no grafo/, enquanto a segunda componente *não pertencer ao grafo*, então *é impossível adicionar a nova /aresta/ ao grafo*.
+2. =Erro= ~LeftNodeNotInGraph~ 
+3. =Erro= ~BothNodesNotInGraph~
+4. =Erro= ~DirectedCycleDetected~
+
+#+begin_src 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GraphError {
+    LeftNodeNotInGraph,
+    RightNodeNotInGraph,
+    BothNodesNotInGraph,
+    DirectedCycleDetected,
+}
+#+end_src 
+   
+*** Representação para Erros
+#+begin_src
+impl fmt::Display for GraphError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            GraphError::LeftNodeNotInGraph => {
+                write!(f, "cannot add edge: left node does not belong to the graph")
+            }
+            GraphError::RightNodeNotInGraph => {
+                write!(f, "cannot add edge: right node does not belong to the graph")
+            }
+            GraphError::BothNodesNotInGraph => {
+                write!(f, "cannot add edge: neither left nor right node belongs to the graph")
+            }
+            GraphError::DirectedCycleDetected => {
+                write!(f, "cannot compute topological order: directed cycle detected")
+            }
+        }
+    }
+}
+
+impl Error for GraphError {}
+#+end_src
+
+** Definições
+Um nó ~Node~ genérico sobre ~T~. Acessamos seu conteúdo através de seu campo ~value~. Nós são conectados por arcos ~Arc~, genérico sobre ~T~. Espera-se um ~T~ coincidente em ~Node<T>~ e ~Arc<T>~.
+
+#+begin_src rust
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Node<T> {
+    pub value: T,
+}
+
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Arc<T> {
+    pub left:  Rc<Node<T>>,
+    pub right: Rc<Node<T>>,
+}
+
+impl<T> Arc<T> {
+    pub fn new(left: Rc<Node<T>>, right: Rc<Node<T>>) -> Self {
+        Self { left, right }
+    }
+}
+#+end_src 
+
+*** Representações para Nós e Arcos
+**** =Display=
+#+begin_src rust
+impl<T: fmt::Display> fmt::Display for Node<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.value)
+    }
+}
+impl<T: fmt::Display> fmt::Display for Arc<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} ~ {}", self.left, self.right)
+    }
+}
+#+end_src
+
+**** 
