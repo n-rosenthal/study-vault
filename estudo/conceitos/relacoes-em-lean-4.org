@@ -9,7 +9,7 @@
 #+FILETAGS: :algebra:lean:formal-specification:conceito:publish:
 
 * Visão Geral
-Na teoria dos tipos dependentes do Lean 4, a representação canônica do conceito de [[id: "algebra--relation--def"][Relação]] ($R \subseteq A \times B$) é a função característica proposicional ~Rel A B := A → B → Prop~. Essa codificação evita manipular conjuntos de pares explicitamente e permite provar teoremas sobre conjuntos infinitos (como $\mathbb{N}$ ou $\mathbb{R}$) diretamente por manipulação lógica.
+Na teoria dos tipos dependentes do Lean 4, a representação canônica do conceito de [[id:algebra--relation--def][Relação]] ($R \subseteq A \times B$) é a função característica proposicional ~Rel A B := A → B → Prop~. Essa codificação evita manipular conjuntos de pares explicitamente e permite provar teoremas sobre conjuntos infinitos (como $\mathbb{N}$ ou $\mathbb{R}$) diretamente por manipulação lógica.
 
 * Formalização e Provas em Lean 4
 #+begin_src lean4 :tangle lean/StrangeAlgebras/Relation.lean
@@ -91,6 +91,6 @@ end StrangeAlgebras.Concepts
 #+end_src
 
 * Conexões
-- Definição matemática abstrata: [[id: "algebra--relation--def"][Relação]]
-- Especificação equacional executável: [[id: "algebra--relation--maude"][Relações em Maude]]
-- Implementação computacional finita: [[id: "algebra--relation--rust"][Relações em Rust]]
+- Definição matemática abstrata: [[id:algebra--relation--def][Relação]]
+- Especificação equacional executável: [[id:algebra--relation--maude][Relações em Maude]]
+- Implementação computacional finita: [[id:algebra--relation--rust][Relações em Rust]]

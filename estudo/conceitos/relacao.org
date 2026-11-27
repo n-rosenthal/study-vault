@@ -34,6 +34,6 @@ Escrevemos $a \mathrel{R} b$ (ou $(a, b) \in R$) para indicar que $a \in A$ est�
 $$(a, b) \in (R^{-1})^{-1} \iff (b, a) \in R^{-1} \iff (a, b) \in R. \quad \blacksquare$$
 
 * Realizações Computacionais e Formais
-- Especificação equacional em Maude: [[id: "algebra--relation--maude"][Relações em Maude]]
-- Formalização dependente e provas em Lean 4: [[id: "algebra--relation--lean"][Relações em Lean 4]]
-- Estrutura de dados e operações finitas em Rust: [[id: "algebra--relation--rust"][Relações em Rust]]
+- Especificação equacional em Maude: [[id:algebra--relation--maude][Relações em Maude]]
+- Formalização dependente e provas em Lean 4: [[id:algebra--relation--lean][Relações em Lean 4]]
+- Estrutura de dados e operações finitas em Rust: [[id:algebra--relation--rust][Relações em Rust]]

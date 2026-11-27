@@ -9,7 +9,7 @@
 #+FILETAGS: :algebra:rust:conceito:publish:
 
 * Visão Geral
-Para representar uma [[id: "algebra--equivalence-relation--def"][Relação de Equivalência e Conjunto Quociente]] em Rust com alta eficiência, utilizamos uma estrutura de **Partição Disjunta (Union-Find com compressão de caminho e união por posto)** mapeando elementos genéricos `T: Ord + Clone` para representantes canônicos. Isso permite:
+Para representar uma [[id:algebra--equivalence-relation--def][Relação de Equivalência e Conjunto Quociente]] em Rust com alta eficiência, utilizamos uma estrutura de **Partição Disjunta (Union-Find com compressão de caminho e união por posto)** mapeando elementos genéricos `T: Ord + Clone` para representantes canônicos. Isso permite:
 1. Verificar $a \sim b$ em tempo quase constante $O(\alpha(n))$.
 2. Construir explicitamente o conjunto quociente $A/{\sim}$ como uma coleção de classes de equivalência.
 3. Implementar o **levantamento universal (`quotient_lift`)** verificando em tempo de execução se $f : A \to B$ respeita a equivalência antes de induzir $\bar{f} : A/{\sim} \to B$.
@@ -208,7 +208,7 @@ mod tests {
 #+end_src
 
 * Conexões
-- Definição matemática abstrata: [[id: "algebra--equivalence-relation--def"][Relação de Equivalência e Conjunto Quociente]]
-- Base relacional em Rust: [[id: "algebra--relation--rust"][Relações em Rust]]
-- Especificação em Maude: [[id: "algebra--equivalence-relation--maude"][Relações de Equivalência em Maude]]
-- Formalização em Lean 4: [[id: "algebra--equivalence-relation--lean"][Relações de Equivalência em Lean 4]]
+- Definição matemática abstrata: [[id:algebra--equivalence-relation--def][Relação de Equivalência e Conjunto Quociente]]
+- Base relacional em Rust: [[id:algebra--relation--rust][Relações em Rust]]
+- Especificação em Maude: [[id:algebra--equivalence-relation--maude][Relações de Equivalência em Maude]]
+- Formalização em Lean 4: [[id:algebra--equivalence-relation--lean][Relações de Equivalência em Lean 4]]

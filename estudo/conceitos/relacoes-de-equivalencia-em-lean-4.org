@@ -9,7 +9,7 @@
 #+FILETAGS: :algebra:lean:formal-specification:conceito:publish:
 
 * Visão Geral
-O núcleo do Lean 4 possui suporte nativo a tipos quocientes (~Quot~ e ~Quotient~), tornando a construção de [[id: "algebra--equivalence-relation--def"][Relação de Equivalência e Conjunto Quociente]] uma operação primitiva do sistema de tipos. Aqui conectamos as definições de [[id: "algebra--relation--lean"][Relações em Lean 4]] à estrutura ~Equivalence~, provamos o **Teorema Fundamental das Classes de Equivalência** ($a \sim b \iff [a] = [b]$) e demonstramos o levantamento de funções (~Quotient.lift~) pela Propriedade Universal.
+O núcleo do Lean 4 possui suporte nativo a tipos quocientes (~Quot~ e ~Quotient~), tornando a construção de [[id:algebra--equivalence-relation--def][Relação de Equivalência e Conjunto Quociente]] uma operação primitiva do sistema de tipos. Aqui conectamos as definições de [[id:algebra--relation--lean][Relações em Lean 4]] à estrutura ~Equivalence~, provamos o **Teorema Fundamental das Classes de Equivalência** ($a \sim b \iff [a] = [b]$) e demonstramos o levantamento de funções (~Quotient.lift~) pela Propriedade Universal.
 
 * Formalização e Provas em Lean 4
 #+begin_src lean4 :tangle lean/StrangeAlgebras/EquivalenceRelation.lean
@@ -86,7 +86,7 @@ end StrangeAlgebras.Concepts
 #+end_src
 
 * Conexões
-- Definição matemática abstrata: [[id: "algebra--equivalence-relation--def"][Relação de Equivalência e Conjunto Quociente]]
-- Base relacional em Lean 4: [[id: "algebra--relation--lean"][Relações em Lean 4]]
-- Especificação em Maude: [[id: "algebra--equivalence-relation--maude"][Relações de Equivalência em Maude]]
-- Implementação em Rust: [[id: "algebra--equivalence-relation--rust"][Relações de Equivalência em Rust]]
+- Definição matemática abstrata: [[id:algebra--equivalence-relation--def][Relação de Equivalência e Conjunto Quociente]]
+- Base relacional em Lean 4: [[id:algebra--relation--lean][Relações em Lean 4]]
+- Especificação em Maude: [[id:algebra--equivalence-relation--maude][Relações de Equivalência em Maude]]
+- Implementação em Rust: [[id:algebra--equivalence-relation--rust][Relações de Equivalência em Rust]]

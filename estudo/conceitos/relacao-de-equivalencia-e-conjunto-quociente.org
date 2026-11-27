@@ -9,7 +9,7 @@
 #+FILETAGS: :algebra:conceito:publish:
 
 * Definição Formal
-Uma [[id: "algebra--relation--def"][Relação]] homogênea ${\sim} \subseteq A \times A$ sobre um conjunto $A$ é chamada de **relação de equivalência** se satisfaz simultaneamente três axiomas para quaisquer $a, b, c \in A$:
+Uma [[id:algebra--relation--def][Relação]] homogênea ${\sim} \subseteq A \times A$ sobre um conjunto $A$ é chamada de **relação de equivalência** se satisfaz simultaneamente três axiomas para quaisquer $a, b, c \in A$:
 1. *Reflexividade:* $a \sim a$.
 2. *Simetria:* $a \sim b \implies b \sim a$.
 3. *Transitividade:* $(a \sim b \;\land\; b \sim c) \implies a \sim c$.
@@ -45,6 +45,6 @@ Esta construção é a base de todas as estruturas quocientes do Lang:
 - Módulos quocientes $M/N$ e espaços vetoriais quocientes.
 
 * Realizações Computacionais e Formais
-- Especificação equacional e normalização em Maude: [[id: "algebra--equivalence-relation--maude"][Relações de Equivalência em Maude]]
-- Formalização com ~Setoid~ e ~Quotient~ em Lean 4: [[id: "algebra--equivalence-relation--lean"][Relações de Equivalência em Lean 4]]
-- Estrutura de partição (Union-Find / Quociente Finito) em Rust: [[id: "algebra--equivalence-relation--rust"][Relações de Equivalência em Rust]]
+- Especificação equacional e normalização em Maude: [[id:algebra--equivalence-relation--maude][Relações de Equivalência em Maude]]
+- Formalização com ~Setoid~ e ~Quotient~ em Lean 4: [[id:algebra--equivalence-relation--lean][Relações de Equivalência em Lean 4]]
+- Estrutura de partição (Union-Find / Quociente Finito) em Rust: [[id:algebra--equivalence-relation--rust][Relações de Equivalência em Rust]]

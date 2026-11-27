@@ -9,7 +9,7 @@
 #+FILETAGS: :algebra:order-theory:conceito:publish:
 
 * Definição Formal
-Uma [[id: "algebra--relation--def"][Relação]] homogênea ${\le} \subseteq P \times P$ sobre um conjunto $P$ admite uma hierarquia de estruturas conforme os axiomas que satisfaz para quaisquer $a, b, c \in P$:
+Uma [[id:algebra--relation--def][Relação]] homogênea ${\le} \subseteq P \times P$ sobre um conjunto $P$ admite uma hierarquia de estruturas conforme os axiomas que satisfaz para quaisquer $a, b, c \in P$:
 
 1. *Pré-ordem (Quasi-ordem):* É reflexiva ($a \le a$) e transitiva ($a \le b \land b \le c \implies a \le c$).
 2. *Ordem Parcial (Poset — Partially Ordered Set):* É uma pré-ordem **antissimétrica**:
@@ -18,7 +18,7 @@ Uma [[id: "algebra--relation--def"][Relação]] homogênea ${\le} \subseteq P \t
    $$\forall a, b \in P,\quad a \le b \;\lor\; b \le a.$$
 4. *Boa-Ordem:* É uma ordem total na qual todo subconjunto não-vazio $S \subseteq P$ possui um elemento mínimo.
 
-*(Nota: Todo conjunto pré-ordenado $(P, \lesssim)$ induz naturalmente uma [[id: "algebra--equivalence-relation--def"][Relação de Equivalência e Conjunto Quociente]] dada por $a \sim b \iff (a \lesssim b \land b \lesssim a)$, tornando o quociente $P/{\sim}$ um Poset).*
+*(Nota: Todo conjunto pré-ordenado $(P, \lesssim)$ induz naturalmente uma [[id:algebra--equivalence-relation--def][Relação de Equivalência e Conjunto Quociente]] dada por $a \sim b \iff (a \lesssim b \land b \lesssim a)$, tornando o quociente $P/{\sim}$ um Poset).*
 
 * Elementos Distintos e Limites em um Poset $(P, \le)$
 Seja $S \subseteq P$ um subconjunto e $m \in P$:
@@ -43,6 +43,6 @@ Um poset $(L, \le)$ é um **reticulado** se todo par de elementos $\{a, b\} \sub
 - **Lema de Zorn (Cap. I / Apêndice):** Se toda cadeia em um poset não-vazio $P$ tem cota superior, então $P$ possui ao menos um elemento maximal — princípio utilizado por Lang para provar que todo anel comutativo com unidade possui um ideal maximal e que todo espaço vetorial possui base.
 
 * Realizações Computacionais e Formais
-- Especificação equacional em Maude: [[id: "algebra--order-relation--maude"][Relações de Ordem em Maude]]
-- Formalização dependente e provas em Lean 4: [[id: "algebra--order-relation--lean"][Relações de Ordem em Lean 4]]
-- Estrutura de Poset finito, diagrama de Hasse e reticulado em Rust: [[id: "algebra--order-relation--rust"][Relações de Ordem em Rust]]
+- Especificação equacional em Maude: [[id:algebra--order-relation--maude][Relações de Ordem em Maude]]
+- Formalização dependente e provas em Lean 4: [[id:algebra--order-relation--lean][Relações de Ordem em Lean 4]]
+- Estrutura de Poset finito, diagrama de Hasse e reticulado em Rust: [[id:algebra--order-relation--rust][Relações de Ordem em Rust]]

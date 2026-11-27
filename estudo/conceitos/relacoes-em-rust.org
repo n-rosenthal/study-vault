@@ -9,7 +9,7 @@
 #+FILETAGS: :algebra:rust:conceito:publish:
 
 * Visão Geral
-Para computar efetivamente com o conceito de [[id: "algebra--relation--def"][Relação]] sobre domínios finitos, representamos $R \subseteq A \times B$ em Rust como uma estrutura genérica ~Relation<A, B>~ apoiada em ~BTreeSet<(A, B)>~. O uso de ~BTreeSet~ garante representação canônica ordenada, ausência de pares duplicados (espelhando a idempotência da união em [[id: "algebra--relation--maude"][Relações em Maude]]) e igualdade estrutural determinística.
+Para computar efetivamente com o conceito de [[id:algebra--relation--def][Relação]] sobre domínios finitos, representamos $R \subseteq A \times B$ em Rust como uma estrutura genérica ~Relation<A, B>~ apoiada em ~BTreeSet<(A, B)>~. O uso de ~BTreeSet~ garante representação canônica ordenada, ausência de pares duplicados (espelhando a idempotência da união em [[id:algebra--relation--maude][Relações em Maude]]) e igualdade estrutural determinística.
 
 * Implementação em Rust
 #+begin_src rust :tangle rust/crates/algebra-core/src/relation.rs
@@ -144,6 +144,6 @@ mod tests {
 #+end_src
 
 * Conexões
-- Definição matemática abstrata: [[id: "algebra--relation--def"][Relação]]
-- Especificação equacional em Maude: [[id: "algebra--relation--maude"][Relações em Maude]]
-- Formalização dependente em Lean 4: [[id: "algebra--relation--lean"][Relações em Lean 4]]
+- Definição matemática abstrata: [[id:algebra--relation--def][Relação]]
+- Especificação equacional em Maude: [[id:algebra--relation--maude][Relações em Maude]]
+- Formalização dependente em Lean 4: [[id:algebra--relation--lean][Relações em Lean 4]]

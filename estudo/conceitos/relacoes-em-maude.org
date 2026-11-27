@@ -9,7 +9,7 @@
 #+FILETAGS: :algebra:maude:formal-specification:conceito:publish:
 
 * Visão Geral
-Esta nota concretiza o conceito de [[id: "algebra--relation--def"][Relação]] na lógica equacional de reescrita do Maude. Como Maude modela tipos de dados como álgebras iniciais de termos módulo equações associativas, comutativas e idempotentes (~assoc comm id:~), representamos uma relação finita sobre um sorte ~Elt~ como um multiconjunto idempotente (conjunto) de pares ordenados ~pair(X, Y)~.
+Esta nota concretiza o conceito de [[id:algebra--relation--def][Relação]] na lógica equacional de reescrita do Maude. Como Maude modela tipos de dados como álgebras iniciais de termos módulo equações associativas, comutativas e idempotentes (~assoc comm id:~), representamos uma relação finita sobre um sorte ~Elt~ como um multiconjunto idempotente (conjunto) de pares ordenados ~pair(X, Y)~.
 
 * Módulo Funcional ~BINARY-RELATION~
 #+begin_src maude
@@ -71,6 +71,6 @@ reduce ((b, c) ; (b, a)) o ((a, b)) .
 #+end_src
 
 * Conexões
-- Definição matemática abstrata: [[id: "algebra--relation--def"][Relação]]
-- Formalização e provas em assistente de provas: [[id: "algebra--relation--lean"][Relações em Lean 4]]
-- Implementação imperativa/funcional em Rust: [[id: "algebra--relation--rust"][Relações em Rust]]
+- Definição matemática abstrata: [[id:algebra--relation--def][Relação]]
+- Formalização e provas em assistente de provas: [[id:algebra--relation--lean][Relações em Lean 4]]
+- Implementação imperativa/funcional em Rust: [[id:algebra--relation--rust][Relações em Rust]]

@@ -9,7 +9,7 @@
 #+FILETAGS: :algebra:rust:order-theory:conceito:publish:
 
 * Visão Geral
-Para trabalhar computacionalmente com [[id: "algebra--order-relation--def"][Relação de Ordem e Reticulados]] sobre conjuntos finitos, construímos `Poset<T>` sobre [[id: "algebra--relation--rust"][Relações em Rust]]. Além de validar os axiomas de ordem parcial (reflexividade, antissimetria e transitividade), implementamos:
+Para trabalhar computacionalmente com [[id:algebra--order-relation--def][Relação de Ordem e Reticulados]] sobre conjuntos finitos, construímos `Poset<T>` sobre [[id:algebra--relation--rust][Relações em Rust]]. Além de validar os axiomas de ordem parcial (reflexividade, antissimetria e transitividade), implementamos:
 1. **Redução Transitiva (`hasse_diagram`):** Extrai as relações de cobertura ($a \lessdot b$, i.e., $a < b$ sem nenhum $c$ tal que $a < c < b$), que correspondem exatamente às arestas do **Diagrama de Hasse**.
 2. **Elementos Minimais e Maximais** (`minimals`, `maximals`).
 3. **Cálculo de Ínfimo ($\bigwedge$) e Supremo ($\bigvee$)** (`meet`, `join`) e verificação automática de **Reticulado** (`is_lattice`).
@@ -174,7 +174,7 @@ mod tests {
 #+end_src
 
 * Conexões
-- Definição matemática abstrata: [[id: "algebra--order-relation--def"][Relação de Ordem e Reticulados]]
-- Base relacional em Rust: [[id: "algebra--relation--rust"][Relações em Rust]]
-- Especificação em Maude: [[id: "algebra--order-relation--maude"][Relações de Ordem em Maude]]
-- Formalização em Lean 4: [[id: "algebra--order-relation--lean"][Relações de Ordem em Lean 4]]
+- Definição matemática abstrata: [[id:algebra--order-relation--def][Relação de Ordem e Reticulados]]
+- Base relacional em Rust: [[id:algebra--relation--rust][Relações em Rust]]
+- Especificação em Maude: [[id:algebra--order-relation--maude][Relações de Ordem em Maude]]
+- Formalização em Lean 4: [[id:algebra--order-relation--lean][Relações de Ordem em Lean 4]]

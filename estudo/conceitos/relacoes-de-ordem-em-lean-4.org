@@ -9,7 +9,7 @@
 #+FILETAGS: :algebra:lean:order-theory:formal-specification:conceito:publish:
 
 * Visão Geral
-No Lean 4, formalizamos a hierarquia de [[id: "algebra--order-relation--def"][Relação de Ordem e Reticulados]] utilizando *type classes* estendidas a partir das propriedades de [[id: "algebra--relation--lean"][Relações em Lean 4]]. Provamos a **unicidade do supremo**, a **dualidade de ordem** (se $(P, \le)$ é um poset, então $(P, \ge)$ também é um poset) e a **caracterização algébrica da ordem** em um reticulado ($a \le b \iff a \wedge b = a$).
+No Lean 4, formalizamos a hierarquia de [[id:algebra--order-relation--def][Relação de Ordem e Reticulados]] utilizando *type classes* estendidas a partir das propriedades de [[id:algebra--relation--lean][Relações em Lean 4]]. Provamos a **unicidade do supremo**, a **dualidade de ordem** (se $(P, \le)$ é um poset, então $(P, \ge)$ também é um poset) e a **caracterização algébrica da ordem** em um reticulado ($a \le b \iff a \wedge b = a$).
 
 * Formalização e Provas em Lean 4
 #+begin_src lean4 :tangle lean/StrangeAlgebras/OrderRelation.lean
@@ -92,7 +92,7 @@ end StrangeAlgebras.Concepts
 #+end_src
 
 * Conexões
-- Definição matemática abstrata: [[id: "algebra--order-relation--def"][Relação de Ordem e Reticulados]]
-- Base relacional em Lean 4: [[id: "algebra--relation--lean"][Relações em Lean 4]]
-- Especificação em Maude: [[id: "algebra--order-relation--maude"][Relações de Ordem em Maude]]
-- Implementação em Rust: [[id: "algebra--order-relation--rust"][Relações de Ordem em Rust]]
+- Definição matemática abstrata: [[id:algebra--order-relation--def][Relação de Ordem e Reticulados]]
+- Base relacional em Lean 4: [[id:algebra--relation--lean][Relações em Lean 4]]
+- Especificação em Maude: [[id:algebra--order-relation--maude][Relações de Ordem em Maude]]
+- Implementação em Rust: [[id:algebra--order-relation--rust][Relações de Ordem em Rust]]

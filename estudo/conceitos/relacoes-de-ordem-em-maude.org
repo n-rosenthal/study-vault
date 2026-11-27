@@ -9,7 +9,7 @@
 #+FILETAGS: :algebra:maude:order-theory:formal-specification:conceito:publish:
 
 * Visão Geral
-Esta nota concretiza o conceito de [[id: "algebra--order-relation--def"][Relação de Ordem e Reticulados]] em Maude. Modelamos um poset finito (como o reticulado de divisibilidade de um inteiro) tanto relacionalmente (a partir da [[id: "algebra--relation--maude"][Relações em Maude]] de ordem $\le$) quanto algebricamente, verificando a caracterização $a \le b \iff a \wedge b = a$.
+Esta nota concretiza o conceito de [[id:algebra--order-relation--def][Relação de Ordem e Reticulados]] em Maude. Modelamos um poset finito (como o reticulado de divisibilidade de um inteiro) tanto relacionalmente (a partir da [[id:algebra--relation--maude][Relações em Maude]] de ordem $\le$) quanto algebricamente, verificando a caracterização $a \le b \iff a \wedge b = a$.
 
 * Módulo Funcional ~PARTIAL-ORDER~
 #+begin_src maude
@@ -89,7 +89,7 @@ reduce isPoset(d1 | d2 | d3 | d6,
 #+end_src
 
 * Conexões
-- Definição matemática abstrata: [[id: "algebra--order-relation--def"][Relação de Ordem e Reticulados]]
-- Base relacional em Maude: [[id: "algebra--relation--maude"][Relações em Maude]]
-- Formalização dependente em Lean 4: [[id: "algebra--order-relation--lean"][Relações de Ordem em Lean 4]]
-- Implementação computacional em Rust: [[id: "algebra--order-relation--rust"][Relações de Ordem em Rust]]
+- Definição matemática abstrata: [[id:algebra--order-relation--def][Relação de Ordem e Reticulados]]
+- Base relacional em Maude: [[id:algebra--relation--maude][Relações em Maude]]
+- Formalização dependente em Lean 4: [[id:algebra--order-relation--lean][Relações de Ordem em Lean 4]]
+- Implementação computacional em Rust: [[id:algebra--order-relation--rust][Relações de Ordem em Rust]]
