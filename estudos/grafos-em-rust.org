@@ -1,16 +1,17 @@
-
 :PROPERTIES:
-:ID:       8f1b3354-e0c9-4f63-be3b-c8ae585f4ebf
+:ID:       rust-impl--graph
 :END:
 #+TITLE: Grafos em Rust
 #+DATE: [2026-11-26 qui]
-#+DESCRIPTION: 
+#+DESCRIPTION: Implementação de grafos direcionados em Rust
 #+STATUS: semente
 #+NOTE_TYPE: estudo
-#+FILETAGS: :programming-language/rust:implementation:publish:estudo:
+#+FILETAGS: :rust:implementation:publish:estudo:
+#+PROPERTY: header-args:rust :tangle src/lib.rs :mkdirp yes
 
 * Implementação
-** /Crates/
+
+** Importações
 #+begin_src rust
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, VecDeque};
@@ -18,17 +19,19 @@ use std::error::Error;
 use std::fmt;
 use std::ops::Add;
 use std::rc::Rc;
-
 #+end_src
 
-** Erros
-Atualmente, as condições de erro implicam a tentativa de construção de um grafo impossível, ou mal-formado. Seja \( G = (N, A) \) um grafo, então
-1. =Erro= ~RightNodeNotInGraph~ se \( a \in A \land a' \notin A \implies \false \), isto é, se a primeira componente de um arco for um nó que /está no grafo/, enquanto a segunda componente *não pertencer ao grafo*, então *é impossível adicionar a nova /aresta/ ao grafo*.
-2. =Erro= ~LeftNodeNotInGraph~ 
-3. =Erro= ~BothNodesNotInGraph~
-4. =Erro= ~DirectedCycleDetected~
+#+RESULTS:
 
-#+begin_src 
+** Erros
+Atualmente, as condições de erro representam a tentativa de construir um grafo impossível ou malformado. Seja \( G = (N, A) \) um grafo direcionado, em que \( N \) é o conjunto de nós e \( A \subseteq N \times N \) é o conjunto de arcos. Dado um arco candidato \( (u, v) \):
+
+1. =Erro= ~RightNodeNotInGraph~: ocorre se \( u \in N \land v \notin N \), isto é, o nó de origem pertence ao grafo, mas o nó de destino não pertence; logo, é impossível adicionar o arco ao grafo.
+2. =Erro= ~LeftNodeNotInGraph~: ocorre se \( u \notin N \land v \in N \), isto é, o nó de destino pertence ao grafo, mas o nó de origem não pertence.
+3. =Erro= ~BothNodesNotInGraph~: ocorre se \( u \notin N \land v \notin N \), isto é, nem o nó de origem nem o nó de destino pertencem ao grafo.
+4. =Erro= ~DirectedCycleDetected~: ocorre quando a operação introduz ou encontra um ciclo direcionado \( v_0 \to v_1 \to \dots \to v_k \to v_0 \) em um grafo que exige aciclicidade (como na ordenação topológica).
+
+#+begin_src rust
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GraphError {
     LeftNodeNotInGraph,
@@ -36,21 +39,21 @@ pub enum GraphError {
     BothNodesNotInGraph,
     DirectedCycleDetected,
 }
-#+end_src 
-   
+#+end_src
+
 *** Representação para Erros
-#+begin_src
+#+begin_src rust
 impl fmt::Display for GraphError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             GraphError::LeftNodeNotInGraph => {
-                write!(f, "cannot add edge: left node does not belong to the graph")
+                write!(f, "cannot add arc: left node does not belong to the graph")
             }
             GraphError::RightNodeNotInGraph => {
-                write!(f, "cannot add edge: right node does not belong to the graph")
+                write!(f, "cannot add arc: right node does not belong to the graph")
             }
             GraphError::BothNodesNotInGraph => {
-                write!(f, "cannot add edge: neither left nor right node belongs to the graph")
+                write!(f, "cannot add arc: neither left nor right node belongs to the graph")
             }
             GraphError::DirectedCycleDetected => {
                 write!(f, "cannot compute topological order: directed cycle detected")
@@ -63,7 +66,8 @@ impl Error for GraphError {}
 #+end_src
 
 ** Definições
-Um nó ~Node~ genérico sobre ~T~. Acessamos seu conteúdo através de seu campo ~value~. Nós são conectados por arcos ~Arc~, genérico sobre ~T~. Espera-se um ~T~ coincidente em ~Node<T>~ e ~Arc<T>~.
+*** Nós e Arcos
+Um nó ~Node~ é genérico sobre ~T~, com seu conteúdo acessível pelo campo ~value~. Os nós são conectados por arcos direcionados ~Arc~, também genéricos sobre ~T~, exigindo o mesmo tipo ~T~ em ~Node<T>~ e ~Arc<T>~.
 
 #+begin_src rust
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -71,10 +75,15 @@ pub struct Node<T> {
     pub value: T,
 }
 
+impl<T> Node<T> {
+    pub fn new(value: T) -> Self {
+        Self { value }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Arc<T> {
-    pub left:  Rc<Node<T>>,
+    pub left: Rc<Node<T>>,
     pub right: Rc<Node<T>>,
 }
 
@@ -83,21 +92,122 @@ impl<T> Arc<T> {
         Self { left, right }
     }
 }
-#+end_src 
+#+end_src
 
-*** Representações para Nós e Arcos
-**** =Display=
+**** Representações para Nós e Arcos
+
+*** Arestas (/Edges/)
+Aqui, uma aresta é entendida como um arco \( a \in A \) associado a uma propriedade \( P(a) \) (por exemplo, um peso, custo ou rótulo).
+
+*** Grafos
+Um grafo direcionado ponderado (ou rotulado) \( G = (N, E) \) é definido por uma coleção de nós \( N \) e uma coleção de arestas \( E \), em que cada aresta associa um arco \( a = (u, v) \in N \times N \) a uma propriedade \( P(a) \).
+
+A inserção de uma nova aresta preserva a invariante estrutural do grafo: ambos os extremos \( u \) e \( v \) devem pertencer previamente a \( N \); caso contrário, a operação falha com a variante correspondente de ~GraphError~.
+
+#+begin_src rust
+#[derive(Debug, Clone)]
+pub struct Graph<T, P> {
+    pub nodes: Vec<Rc<Node<T>>>,
+    pub edges: Vec<Edge<T, P>>,
+}
+
+impl<T, P> Default for Graph<T, P> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T, P> Graph<T, P> {
+    pub fn new() -> Self {
+        Self {
+            nodes: Vec::new(),
+            edges: Vec::new(),
+        }
+    }
+
+    pub fn contains_node(&self, node: &Rc<Node<T>>) -> bool {
+        self.nodes.iter().any(|n| Rc::ptr_eq(n, node))
+    }
+
+    pub fn add_node(&mut self, value: T) -> Rc<Node<T>> {
+        let node = Rc::new(Node::new(value));
+        self.nodes.push(Rc::clone(&node));
+        node
+    }
+
+    pub fn add_edge(
+        &mut self,
+        left: &Rc<Node<T>>,
+        right: &Rc<Node<T>>,
+        property: P,
+    ) -> Result<(), GraphError> {
+        match (self.contains_node(left), self.contains_node(right)) {
+            (false, false) => Err(GraphError::BothNodesNotInGraph),
+            (false, true) => Err(GraphError::LeftNodeNotInGraph),
+            (true, false) => Err(GraphError::RightNodeNotInGraph),
+            (true, true) => {
+                let arc = Arc::new(Rc::clone(left), Rc::clone(right));
+                self.edges.push(Edge::new(arc, property));
+                Ok(())
+            }
+        }
+    }
+
+    pub fn neighbors(&self, node: &Rc<Node<T>>) -> Vec<(&Rc<Node<T>>, &P)> {
+        self.edges
+            .iter()
+            .filter(|edge| Rc::ptr_eq(&edge.arc.left, node))
+            .map(|edge| (&edge.arc.right, &edge.property))
+            .collect()
+    }
+}
+#+end_src
+
+*** =Display=
 #+begin_src rust
 impl<T: fmt::Display> fmt::Display for Node<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.value)
     }
 }
+
 impl<T: fmt::Display> fmt::Display for Arc<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} ~ {}", self.left, self.right)
+        write!(f, "{} -> {}", self.left, self.right)
+    }
+}
+
+#+begin_src rust
+impl<T: fmt::Display, P: fmt::Display> fmt::Display for Edge<T, P> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} [{}]", self.arc, self.property)
     }
 }
 #+end_src
+#+begin_src rust
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Edge<T, P> {
+    pub arc: Arc<T>,
+    pub property: P,
+}
 
-**** 
+impl<T, P> Edge<T, P> {
+    pub fn new(arc: Arc<T>, property: P) -> Self {
+        Self { arc, property }
+    }
+}
+
+impl<T: fmt::Display, P: fmt::Display> fmt::Display for Graph<T, P> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Nodes ({}):", self.nodes.len())?;
+        for node in &self.nodes {
+            writeln!(f, "  {}", node)?;
+        }
+        writeln!(f, "Edges ({}):", self.edges.len())?;
+        for edge in &self.edges {
+            writeln!(f, "  {}", edge)?;
+        }
+        Ok(())
+    }
+}
+#+end_src

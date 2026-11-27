@@ -1,0 +1,392 @@
+:PROPERTIES:
+:ID:       rust-imple--preorder
+:END:
+#+TITLE: Relações de Ordem em Rust
+#+DATE: [2026-11-26 qui]
+#+DESCRIPTION: Implementação de relações de ordem e pré-ordem para estruturas de dados
+#+STATUS: semente
+#+NOTE_TYPE: estudo
+#+FILETAGS: :rust:implementation:publish:estudo:
+#+PROPERTY: header-args:rust :tangle src/lib.rs :mkdirp yes
+
+* Implementação
+
+** Importações
+#+begin_src rust
+use std::collections::HashSet;
+use std::error::Error;
+use std::fmt;
+use std::hash::Hash;
+#+end_src
+
+** Fundamentos e Erros
+Seja \( S \) um conjunto (domínio) e \( R \subseteq S \times S \) uma relação binária sobre \( S \), onde \( (x, y) \in R \) denota \( x \preceq y \). Os axiomas fundamentais de ordem são:
+
+- *Reflexividade:* \( \forall x \in S,\ (x, x) \in R \).
+- *Transitividade:* \( \forall x, y, z \in S,\ (x, y) \in R \land (y, z) \in R \implies (x, z) \in R \).
+- *Antissimetria:* \( \forall x, y \in S,\ (x, y) \in R \land (y, x) \in R \implies x = y \).
+- *Totalidade (conectividade):* \( \forall x, y \in S,\ (x, y) \in R \lor (y, x) \in R \).
+
+A partir desses axiomas, definem-se as seguintes hierarquias:
+
+1. *Pré-ordem (/Preorder/):* relação reflexiva e transitiva. Elementos distintos podem ser mutuamente comparáveis (\( x \preceq y \land y \preceq x \) com \( x \neq y \)), induzindo uma relação de equivalência \( x \sim y \).
+2. *Ordem parcial (/Partial Order/):* pré-ordem que também satisfaz a antissimetria.
+3. *Ordem total (/Total Order/):* ordem parcial que também satisfaz a totalidade.
+
+As condições de erro representam tentativas de operar fora do domínio ou de promover uma relação finita \( R \) a uma estrutura de ordem cujos axiomas não são satisfeitos:
+
+1. =Erro= ~ElementNotInDomain~: ocorre ao tentar relacionar \( (x, y) \) quando \( x \notin S \lor y \notin S \).
+2. =Erro= ~ReflexivityViolated~: ocorre se \( \exists x \in S,\ (x, x) \notin R \).
+3. =Erro= ~TransitivityViolated~: ocorre se \( \exists x, y, z \in S,\ (x, y) \in R \land (y, z) \in R \land (x, z) \notin R \).
+4. =Erro= ~AntisymmetryViolated~: ocorre se \( \exists x, y \in S,\ (x, y) \in R \land (y, x) \in R \land x \neq y \).
+5. =Erro= ~TotalityViolated~: ocorre se \( \exists x, y \in S,\ (x, y) \notin R \land (y, x) \notin R \).
+
+#+begin_src rust
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OrderError {
+    ElementNotInDomain,
+    ReflexivityViolated,
+    TransitivityViolated,
+    AntisymmetryViolated,
+    TotalityViolated,
+}
+#+end_src
+
+*** Representação para Erros
+#+begin_src rust
+impl fmt::Display for OrderError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            OrderError::ElementNotInDomain => {
+                write!(f, "cannot relate elements: one or both elements do not belong to the domain")
+            }
+            OrderError::ReflexivityViolated => {
+                write!(f, "invalid order relation: reflexivity axiom violated")
+            }
+            OrderError::TransitivityViolated => {
+                write!(f, "invalid order relation: transitivity axiom violated")
+            }
+            OrderError::AntisymmetryViolated => {
+                write!(f, "invalid partial order: antisymmetry axiom violated")
+            }
+            OrderError::TotalityViolated => {
+                write!(f, "invalid total order: totality axiom violated")
+            }
+        }
+    }
+}
+
+impl Error for OrderError {}
+#+end_src
+
+** Definições
+
+*** Traço =Preorder=
+A biblioteca padrão do Rust modela ordens parciais (=PartialOrd=) e ordens totais (=Ord=), mas não fornece um traço dedicado a pré-ordens. O traço ~Preorder~ exige apenas o operador não estrito ~le~ (\( x \preceq y \)), derivando a equivalência induzida ~equiv~ (\( x \sim y \iff x \preceq y \land y \preceq x \)) e a pré-ordem estrita ~lt~ (\( x \prec y \iff x \preceq y \land y \npreceq x \)).
+
+#+begin_src rust
+pub trait Preorder {
+    fn le(&self, other: &Self) -> bool;
+
+    fn equiv(&self, other: &Self) -> bool {
+        self.le(other) && other.le(self)
+    }
+
+    fn lt(&self, other: &Self) -> bool {
+        self.le(other) && !other.le(self)
+    }
+
+    fn ge(&self, other: &Self) -> bool {
+        other.le(self)
+    }
+
+    fn gt(&self, other: &Self) -> bool {
+        other.lt(self)
+    }
+}
+#+end_src
+
+*** Relações Binárias Finitas
+Para inspecionar e validar relações finitas em tempo de execução, definimos ~Relation<T>~ como um par \( (S, R) \) sobre um domínio finito \( S \). A partir de ~Relation<T>~, os tipos ~PreorderSet<T>~, ~PartialOrderSet<T>~ e ~TotalOrderSet<T>~ garantem por construção (via ~TryFrom~) os respectivos invariantes axiomáticos.
+
+#+begin_src rust
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Relation<T: Eq + Hash> {
+    pub domain: HashSet<T>,
+    pub pairs: HashSet<(T, T)>,
+}
+
+impl<T: Eq + Hash> Default for Relation<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T: Eq + Hash> Relation<T> {
+    pub fn new() -> Self {
+        Self {
+            domain: HashSet::new(),
+            pairs: HashSet::new(),
+        }
+    }
+
+    pub fn insert_element(&mut self, elem: T) -> bool {
+        self.domain.insert(elem)
+    }
+
+    pub fn contains_element(&self, elem: &T) -> bool {
+        self.domain.contains(elem)
+    }
+
+    pub fn relate(&mut self, left: T, right: T) -> Result<bool, OrderError> {
+        if !self.domain.contains(&left) || !self.domain.contains(&right) {
+            return Err(OrderError::ElementNotInDomain);
+        }
+        Ok(self.pairs.insert((left, right)))
+    }
+
+    pub fn holds(&self, left: &T, right: &T) -> bool
+    where
+        T: Clone,
+    {
+        self.pairs.contains(&(left.clone(), right.clone()))
+    }
+
+    pub fn is_reflexive(&self) -> bool
+    where
+        T: Clone,
+    {
+        self.domain
+            .iter()
+            .all(|x| self.pairs.contains(&(x.clone(), x.clone())))
+    }
+
+    pub fn is_transitive(&self) -> bool
+    where
+        T: Clone,
+    {
+        for (x, y1) in &self.pairs {
+            for (y2, z) in &self.pairs {
+                if y1 == y2 && !self.pairs.contains(&(x.clone(), z.clone())) {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    pub fn is_antisymmetric(&self) -> bool
+    where
+        T: Clone,
+    {
+        self.pairs
+            .iter()
+            .all(|(x, y)| x == y || !self.pairs.contains(&(y.clone(), x.clone())))
+    }
+
+    pub fn is_total(&self) -> bool
+    where
+        T: Clone,
+    {
+        for x in &self.domain {
+            for y in &self.domain {
+                let forward = self.pairs.contains(&(x.clone(), y.clone()));
+                let backward = self.pairs.contains(&(y.clone(), x.clone()));
+                if !forward && !backward {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+}
+#+end_src
+
+*** Fechos e Estruturas Validadas
+O fecho reflexivo-transitivo \( R^* \) transforma qualquer relação binária finita \( R \) sobre \( S \) na menor pré-ordem que a contém.
+
+#+begin_src rust
+impl<T: Eq + Hash + Clone> Relation<T> {
+    pub fn reflexive_closure(&self) -> Self {
+        let mut closed = self.clone();
+        for x in &self.domain {
+            closed.pairs.insert((x.clone(), x.clone()));
+        }
+        closed
+    }
+
+    pub fn transitive_closure(&self) -> Self {
+        let mut closed = self.clone();
+        let elems: Vec<T> = self.domain.iter().cloned().collect();
+
+        for k in &elems {
+            for i in &elems {
+                if !closed.pairs.contains(&(i.clone(), k.clone())) {
+                    continue;
+                }
+                for j in &elems {
+                    if closed.pairs.contains(&(k.clone(), j.clone())) {
+                        closed.pairs.insert((i.clone(), j.clone()));
+                    }
+                }
+            }
+        }
+        closed
+    }
+
+    pub fn preorder_closure(&self) -> PreorderSet<T> {
+        let closed = self.reflexive_closure().transitive_closure();
+        PreorderSet { relation: closed }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreorderSet<T: Eq + Hash> {
+    relation: Relation<T>,
+}
+
+impl<T: Eq + Hash + Clone> TryFrom<Relation<T>> for PreorderSet<T> {
+    type Error = OrderError;
+
+    fn try_from(relation: Relation<T>) -> Result<Self, Self::Error> {
+        if !relation.is_reflexive() {
+            return Err(OrderError::ReflexivityViolated);
+        }
+        if !relation.is_transitive() {
+            return Err(OrderError::TransitivityViolated);
+        }
+        Ok(Self { relation })
+    }
+}
+
+impl<T: Eq + Hash + Clone> PreorderSet<T> {
+    pub fn relation(&self) -> &Relation<T> {
+        &self.relation
+    }
+
+    pub fn le(&self, left: &T, right: &T) -> bool {
+        self.relation.holds(left, right)
+    }
+
+    pub fn equiv(&self, left: &T, right: &T) -> bool {
+        self.le(left, right) && self.le(right, left)
+    }
+
+    pub fn equivalence_class(&self, elem: &T) -> HashSet<T> {
+        self.relation
+            .domain
+            .iter()
+            .filter(|other| self.equiv(elem, other))
+            .cloned()
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PartialOrderSet<T: Eq + Hash> {
+    preorder: PreorderSet<T>,
+}
+
+impl<T: Eq + Hash + Clone> TryFrom<Relation<T>> for PartialOrderSet<T> {
+    type Error = OrderError;
+
+    fn try_from(relation: Relation<T>) -> Result<Self, Self::Error> {
+        let preorder = PreorderSet::try_from(relation)?;
+        if !preorder.relation.is_antisymmetric() {
+            return Err(OrderError::AntisymmetryViolated);
+        }
+        Ok(Self { preorder })
+    }
+}
+
+impl<T: Eq + Hash + Clone> PartialOrderSet<T> {
+    pub fn relation(&self) -> &Relation<T> {
+        self.preorder.relation()
+    }
+
+    pub fn minimal_elements(&self) -> HashSet<T> {
+        let rel = self.relation();
+        rel.domain
+            .iter()
+            .filter(|m| {
+                !rel.domain
+                    .iter()
+                    .any(|x| x != *m && rel.holds(x, m))
+            })
+            .cloned()
+            .collect()
+    }
+
+    pub fn maximal_elements(&self) -> HashSet<T> {
+        let rel = self.relation();
+        rel.domain
+            .iter()
+            .filter(|m| {
+                !rel.domain
+                    .iter()
+                    .any(|x| x != *m && rel.holds(m, x))
+            })
+            .cloned()
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TotalOrderSet<T: Eq + Hash> {
+    poset: PartialOrderSet<T>,
+}
+
+impl<T: Eq + Hash + Clone> TryFrom<Relation<T>> for TotalOrderSet<T> {
+    type Error = OrderError;
+
+    fn try_from(relation: Relation<T>) -> Result<Self, Self::Error> {
+        let poset = PartialOrderSet::try_from(relation)?;
+        if !poset.relation().is_total() {
+            return Err(OrderError::TotalityViolated);
+        }
+        Ok(Self { poset })
+    }
+}
+
+impl<T: Eq + Hash + Clone> TotalOrderSet<T> {
+    pub fn relation(&self) -> &Relation<T> {
+        self.poset.relation()
+    }
+}
+#+end_src
+
+*** Representações
+**** =Display=
+#+begin_src rust
+impl<T: Eq + Hash + fmt::Display> fmt::Display for Relation<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Domain ({}):", self.domain.len())?;
+        for elem in &self.domain {
+            writeln!(f, "  {}", elem)?;
+        }
+        writeln!(f, "Pairs ({}):", self.pairs.len())?;
+        for (left, right) in &self.pairs {
+            writeln!(f, "  {} <= {}", left, right)?;
+        }
+        Ok(())
+    }
+}
+
+impl<T: Eq + Hash + fmt::Display> fmt::Display for PreorderSet<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.relation)
+    }
+}
+
+impl<T: Eq + Hash + fmt::Display> fmt::Display for PartialOrderSet<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.preorder)
+    }
+}
+
+impl<T: Eq + Hash + fmt::Display> fmt::Display for TotalOrderSet<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.poset)
+    }
+}
+#+end_src
