@@ -1,0 +1,95 @@
+:PROPERTIES:
+:ID:       algebra--order-relation--maude
+:END:
+#+TITLE: Relações de Ordem em Maude
+#+DATE: [2026-11-27 sex]
+#+DESCRIPTION: Especificação de conjuntos parcialmente ordenados (Posets), elementos minimais/maximais e reticulados distributivos finitos em Maude.
+#+STATUS: semente
+#+NOTE_TYPE: conceito
+#+FILETAGS: :algebra:maude:order-theory:formal-specification:conceito:publish:
+
+* Visão Geral
+Esta nota concretiza o conceito de [[id: "algebra--order-relation--def"][Relação de Ordem e Reticulados]] em Maude. Modelamos um poset finito (como o reticulado de divisibilidade de um inteiro) tanto relacionalmente (a partir da [[id: "algebra--relation--maude"][Relações em Maude]] de ordem $\le$) quanto algebricamente, verificando a caracterização $a \le b \iff a \wedge b = a$.
+
+* Módulo Funcional ~PARTIAL-ORDER~
+#+begin_src maude
+fmod PARTIAL-ORDER is
+  protecting BOOL .
+  sorts Elt EltSet Pair Rel .
+  subsort Elt < EltSet .
+  subsort Pair < Rel .
+
+  --- Exemplo: divisores de 6 = {1, 2, 3, 6}
+  ops d1 d2 d3 d6 : -> Elt [ctor] .
+
+  --- Conjuntos de elementos
+  op emptySet : -> EltSet [ctor] .
+  op _|_      : EltSet EltSet -> EltSet [ctor assoc comm id: emptySet] .
+  eq X:Elt | X:Elt = X:Elt .
+
+  --- Pares (X <= Y) e Relações
+  op _<=_  : Elt Elt -> Pair [ctor] .
+  op empty : -> Rel [ctor] .
+  op _;_   : Rel Rel -> Rel [ctor assoc comm id: empty] .
+  eq (X:Elt <= Y:Elt) ; (X:Elt <= Y:Elt) = (X:Elt <= Y:Elt) .
+
+  vars X Y Z : Elt .
+  vars R S   : Rel .
+  vars D     : EltSet .
+
+  --- Pertinência: (X <= Y) ∈ R
+  op holds : Elt Elt Rel -> Bool .
+  eq holds(X, Y, empty)            = false .
+  eq holds(X, Y, (X <= Y) ; R)     = true .
+  eq holds(X, Y, R)                = false [owise] .
+
+  --- Verificação de Reflexividade sobre o domínio D
+  op isReflexive : EltSet Rel -> Bool .
+  eq isReflexive(emptySet, R)  = true .
+  eq isReflexive((X | D), R)   = holds(X, X, R) and isReflexive(D, R) .
+
+  --- Verificação de Antissimetria: se X <= Y e Y <= X então X == Y
+  op isAntisymmetric : Rel -> Bool .
+  eq isAntisymmetric(empty) = true .
+  ceq isAntisymmetric((X <= Y) ; (Y <= X) ; R) = false if X =/= Y .
+  eq isAntisymmetric((X <= Y) ; R) = isAntisymmetric(R) [owise] .
+
+  --- Verificação de Transitividade: se X <= Y e Y <= Z então (X <= Z) ∈ R
+  op checkTransPair : Pair Rel Rel -> Bool .
+  eq checkTransPair((X <= Y), empty, Full)          = true .
+  eq checkTransPair((X <= Y), (Y <= Z) ; S, Full)   =
+       holds(X, Z, Full) and checkTransPair((X <= Y), S, Full) .
+  eq checkTransPair((X <= Y), S, Full)              = true [owise] .
+
+  vars Full : Rel .
+  op checkTransAll : Rel Rel -> Bool .
+  eq checkTransAll(empty, Full)          = true .
+  eq checkTransAll((X <= Y) ; R, Full)   =
+       checkTransPair((X <= Y), Full, Full) and checkTransAll(R, Full) .
+
+  op isPoset : EltSet Rel -> Bool .
+  eq isPoset(D, R) = isReflexive(D, R) and isAntisymmetric(R) and checkTransAll(R, R) .
+
+  --- Verifica se M é minimal no domínio D (nenhum X != M satisfaz X <= M)
+  op isMinimal : Elt EltSet Rel -> Bool .
+  eq isMinimal(M:Elt, emptySet, R) = true .
+  ceq isMinimal(M:Elt, (X | D), R) = false
+   if X =/= M:Elt /\ holds(X, M:Elt, R) .
+  eq isMinimal(M:Elt, (X | D), R) = isMinimal(M:Elt, D, R) [owise] .
+endfm
+#+end_src
+
+* Redução Executável
+#+begin_src maude
+--- Ordem de divisibilidade sobre {1, 2, 3, 6}:
+reduce isPoset(d1 | d2 | d3 | d6,
+  (d1 <= d1) ; (d2 <= d2) ; (d3 <= d3) ; (d6 <= d6) ;
+  (d1 <= d2) ; (d1 <= d3) ; (d1 <= d6) ; (d2 <= d6) ; (d3 <= d6)) .
+--- Resultado: true
+#+end_src
+
+* Conexões
+- Definição matemática abstrata: [[id: "algebra--order-relation--def"][Relação de Ordem e Reticulados]]
+- Base relacional em Maude: [[id: "algebra--relation--maude"][Relações em Maude]]
+- Formalização dependente em Lean 4: [[id: "algebra--order-relation--lean"][Relações de Ordem em Lean 4]]
+- Implementação computacional em Rust: [[id: "algebra--order-relation--rust"][Relações de Ordem em Rust]]

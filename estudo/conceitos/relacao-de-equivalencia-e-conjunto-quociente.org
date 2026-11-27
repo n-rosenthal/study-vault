@@ -1,0 +1,50 @@
+:PROPERTIES:
+:ID:       algebra--equivalence-relation--def
+:END:
+#+TITLE: Relação de Equivalência e Conjunto Quociente
+#+DATE: [2026-11-27 sex]
+#+DESCRIPTION: Definição formal de relação de equivalência, classes de equivalência, partições e propriedade universal do conjunto quociente A/~.
+#+STATUS: semente
+#+NOTE_TYPE: conceito
+#+FILETAGS: :algebra:conceito:publish:
+
+* Definição Formal
+Uma [[id: "algebra--relation--def"][Relação]] homogênea ${\sim} \subseteq A \times A$ sobre um conjunto $A$ é chamada de **relação de equivalência** se satisfaz simultaneamente três axiomas para quaisquer $a, b, c \in A$:
+1. *Reflexividade:* $a \sim a$.
+2. *Simetria:* $a \sim b \implies b \sim a$.
+3. *Transitividade:* $(a \sim b \;\land\; b \sim c) \implies a \sim c$.
+
+* Classes de Equivalência e Conjunto Quociente ($A / {\sim}$)
+Dado um elemento $a \in A$, sua **classe de equivalência** $[a]_{\sim}$ é o subconjunto de todos os elementos equivalentes a $a$:
+$$[a]_{\sim} = \{ x \in A \mid x \sim a \}.$$
+O **conjunto quociente** $A / {\sim}$ é a coleção de todas as classes de equivalência de $A$ módulo ${\sim}$:
+$$A / {\sim} = \{ [a]_{\sim} \mid a \in A \}.$$
+A aplicação sobrejetiva $\pi : A \to A/{\sim}$ dada por $\pi(a) = [a]_{\sim}$ é denominada **projeção canônica**.
+
+* Teoremas Fundamentais
+
+** Teorema 1 (Teorema Fundamental das Relações de Equivalência / Partição)
+*Proposição.* Seja ${\sim}$ uma relação de equivalência sobre $A$. Para quaisquer $a, b \in A$:
+1. $a \in [a]_{\sim}$ (toda classe é não-vazia).
+2. $a \sim b \iff [a]_{\sim} = [b]_{\sim}$.
+3. $[a]_{\sim} \cap [b]_{\sim} \neq \emptyset \implies [a]_{\sim} = [b]_{\sim}$ (classes distintas são disjuntas).
+
+/Demonstração./
+1. Pela reflexividade, $a \sim a$, logo $a \in [a]_{\sim}$.
+2. ($\Rightarrow$) Suponha $a \sim b$. Se $x \in [a]_{\sim}$, então $x \sim a$; por transitividade, $x \sim b$, donde $x \in [b]_{\sim}$. Pela simetria ($b \sim a$), a inclusão reversa é análoga, logo $[a]_{\sim} = [b]_{\sim}$.
+   ($\Leftarrow$) Se $[a]_{\sim} = [b]_{\sim}$, como $a \in [a]_{\sim}$, segue $a \in [b]_{\sim}$, ou seja, $a \sim b$.
+3. Se existe $c \in [a]_{\sim} \cap [b]_{\sim}$, então $c \sim a$ e $c \sim b$. Por simetria e transitividade, $a \sim b$, o que pelo item (2) implica $[a]_{\sim} = [b]_{\sim}$. $\blacksquare$
+
+** Teorema 2 (Propriedade Universal do Conjunto Quociente)
+*Proposição.* Seja $\pi : A \to A/{\sim}$ a projeção canônica. Para toda função $f : A \to B$ que **respeita a equivalência** (isto é, $a \sim b \implies f(a) = f(b)$), existe uma **única** função bem-definida $\bar{f} : A/{\sim} \to B$ tal que $\bar{f} \circ \pi = f$, isto é, $\bar{f}([a]_{\sim}) = f(a)$.
+
+* Papel na Álgebra de Lang
+Esta construção é a base de todas as estruturas quocientes do Lang:
+- Grupos quocientes $G/N$ (via $a \sim b \iff a^{-1}b \in N$).
+- Anéis quocientes $R/I$ (via $a \sim b \iff a - b \in I$).
+- Módulos quocientes $M/N$ e espaços vetoriais quocientes.
+
+* Realizações Computacionais e Formais
+- Especificação equacional e normalização em Maude: [[id: "algebra--equivalence-relation--maude"][Relações de Equivalência em Maude]]
+- Formalização com ~Setoid~ e ~Quotient~ em Lean 4: [[id: "algebra--equivalence-relation--lean"][Relações de Equivalência em Lean 4]]
+- Estrutura de partição (Union-Find / Quociente Finito) em Rust: [[id: "algebra--equivalence-relation--rust"][Relações de Equivalência em Rust]]

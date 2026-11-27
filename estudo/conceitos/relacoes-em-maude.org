@@ -1,0 +1,76 @@
+:PROPERTIES:
+:ID:       algebra--relation--maude
+:END:
+#+TITLE: Relações em Maude
+#+DATE: [2026-11-27 sex]
+#+DESCRIPTION: Especificação algébrica de relações binárias finitas como conjuntos de pares ordenados em Maude.
+#+STATUS: semente
+#+NOTE_TYPE: conceito
+#+FILETAGS: :algebra:maude:formal-specification:conceito:publish:
+
+* Visão Geral
+Esta nota concretiza o conceito de [[id: "algebra--relation--def"][Relação]] na lógica equacional de reescrita do Maude. Como Maude modela tipos de dados como álgebras iniciais de termos módulo equações associativas, comutativas e idempotentes (~assoc comm id:~), representamos uma relação finita sobre um sorte ~Elt~ como um multiconjunto idempotente (conjunto) de pares ordenados ~pair(X, Y)~.
+
+* Módulo Funcional ~BINARY-RELATION~
+#+begin_src maude
+fmod BINARY-RELATION is
+  protecting BOOL .
+  sort Elt Pair Rel .
+  subsort Pair < Rel .
+
+  --- Construtores de elementos de exemplo (domínio finito)
+  ops a b c : -> Elt [ctor] .
+
+  --- Construtor de par ordenado (a, b) ∈ A × B
+  op (_,_) : Elt Elt -> Pair [ctor] .
+
+  --- Conjunto de pares (Relação) com união associativa, comutativa e idempotente
+  op empty : -> Rel [ctor] .
+  op _;_   : Rel Rel -> Rel [ctor assoc comm id: empty] .
+
+  --- Variáveis
+  vars X Y Z : Elt .
+  vars R S   : Rel .
+
+  --- Idempotência da união de pares (elimina duplicatas)
+  eq (X, Y) ; (X, Y) = (X, Y) .
+
+  --- Pertinência: (X, Y) ∈ R
+  op _in_ : Pair Rel -> Bool .
+  eq (X, Y) in empty          = false .
+  eq (X, Y) in ((X, Y) ; R)   = true .
+  eq (X, Y) in R              = false [owise] .
+
+  --- Relação Inversa (R⁻¹)
+  op inv : Rel -> Rel .
+  eq inv(empty)        = empty .
+  eq inv((X, Y) ; R)   = (Y, X) ; inv(R) .
+
+  --- Composição Auxiliar: compõe um único par (X, Y) com toda a relação S
+  op composePair : Pair Rel -> Rel .
+  eq composePair((X, Y), empty)        = empty .
+  eq composePair((X, Y), (Y, Z) ; S)   = (X, Z) ; composePair((X, Y), S) .
+  eq composePair((X, Y), S)            = empty [owise] .
+
+  --- Composição de Relações (S ∘ R)
+  op _o_ : Rel Rel -> Rel .
+  eq S o empty        = empty .
+  eq S o ((X, Y) ; R) = composePair((X, Y), S) ; (S o R) .
+endfm
+#+end_src
+
+* Redução e Verificação Executável
+No interpretador do Maude, podemos reduzir expressões equacionais para verificar a involução ~inv(inv(R))~ e a composição ~S o R~:
+
+#+begin_src maude
+reduce inv(inv((a, b) ; (b, c))) .
+--- Resultado: (a, b) ; (b, c)
+
+reduce ((b, c) ; (b, a)) o ((a, b)) .
+--- Resultado: (a, a) ; (a, c)
+#+end_src
+
+* Conexões
+- Definição matemática abstrata: [[id: "algebra--relation--def"][Relação]]
+- Formalização e provas em assistente de provas: [[id: "algebra--relation--lean"][Relações em Lean 4]]
+- Implementação imperativa/funcional em Rust: [[id: "algebra--relation--rust"][Relações em Rust]]

@@ -1,0 +1,96 @@
+:PROPERTIES:
+:ID:       algebra--relation--lean
+:END:
+#+TITLE: Relações em Lean 4
+#+DATE: [2026-11-27 sex]
+#+DESCRIPTION: Formalização de relações binárias como predicados binários (A → B → Prop) em Lean 4 e provas de suas propriedades estruturais.
+#+STATUS: semente
+#+NOTE_TYPE: conceito
+#+FILETAGS: :algebra:lean:formal-specification:conceito:publish:
+
+* Visão Geral
+Na teoria dos tipos dependentes do Lean 4, a representação canônica do conceito de [[id: "algebra--relation--def"][Relação]] ($R \subseteq A \times B$) é a função característica proposicional ~Rel A B := A → B → Prop~. Essa codificação evita manipular conjuntos de pares explicitamente e permite provar teoremas sobre conjuntos infinitos (como $\mathbb{N}$ ou $\mathbb{R}$) diretamente por manipulação lógica.
+
+* Formalização e Provas em Lean 4
+#+begin_src lean4 :tangle lean/StrangeAlgebras/Relation.lean
+namespace StrangeAlgebras.Concepts
+
+/-- Definição: Relação binária de α em β como predicado binário -/
+def Rel (α : Type u) (β : Type v) := α → β → Prop
+
+section Operations
+variable {α : Type u} {β : Type v} {γ : Type w}
+
+/-- Relação Identidade: id_α(a, b) ↔ a = b -/
+def relId : Rel α α :=
+  fun a b => a = b
+
+/-- Relação Inversa: R⁻¹(b, a) ↔ R(a, b) -/
+def relInv (R : Rel α β) : Rel β α :=
+  fun b a => R a b
+
+/-- Composição de Relações: (S ∘ R)(a, c) ↔ ∃ b, R(a, b) ∧ S(b, c) -/
+def relComp (S : Rel β γ) (R : Rel α β) : Rel α γ :=
+  fun a c => ∃ b : β, R a b ∧ S b c
+
+/-- Inclusão de Relações: R ⊆ S -/
+def relSub (R S : Rel α β) : Prop :=
+  ∀ (a : α) (b : β), R a b → S a b
+
+end Operations
+
+section Properties
+variable {α : Type u}
+
+def Reflexive (R : Rel α α) : Prop :=
+  ∀ a : α, R a a
+
+def Symmetric (R : Rel α α) : Prop :=
+  ∀ {a b : α}, R a b → R b a
+
+def Antisymmetric (R : Rel α α) : Prop :=
+  ∀ {a b : α}, R a b → R b a → a = b
+
+def Transitive (R : Rel α α) : Prop :=
+  ∀ {a b c : α}, R a b → R b c → R a c
+
+end Properties
+
+section Theorems
+variable {α : Type u} {β : Type v} {γ : Type w} {δ : Type z}
+
+/-- Teorema 1 (Involução): (R⁻¹)⁻¹ = R -/
+theorem relInv_inv (R : Rel α β) : relInv (relInv R) = R := by
+  funext a b
+  rfl
+
+/-- Teorema 2 (Associatividade da Composição): (T ∘ S) ∘ R = T ∘ (S ∘ R) -/
+theorem relComp_assoc (T : Rel γ δ) (S : Rel β γ) (R : Rel α β) :
+    relComp (relComp T S) R = relComp T (relComp S R) := by
+  funext a d
+  apply propext
+  constructor
+  · rintro ⟨b, hab, ⟨c, hbc, hcd⟩⟩
+    exact ⟨c, ⟨b, hab, hbc⟩, hcd⟩
+  · rintro ⟨c, ⟨b, hab, hbc⟩, hcd⟩
+    exact ⟨b, hab, ⟨c, hbc, hcd⟩⟩
+
+/-- Teorema 3 (Contravariância da Inversa na Composição): (S ∘ R)⁻¹ = R⁻¹ ∘ S⁻¹ -/
+theorem relInv_comp (S : Rel β γ) (R : Rel α β) :
+    relInv (relComp S R) = relComp (relInv R) (relInv S) := by
+  funext c a
+  apply propext
+  constructor
+  · rintro ⟨b, hab, hbc⟩
+    exact ⟨b, hbc, hab⟩
+  · rintro ⟨b, hbc, hab⟩
+    exact ⟨b, hab, hbc⟩
+
+end Theorems
+end StrangeAlgebras.Concepts
+#+end_src
+
+* Conexões
+- Definição matemática abstrata: [[id: "algebra--relation--def"][Relação]]
+- Especificação equacional executável: [[id: "algebra--relation--maude"][Relações em Maude]]
+- Implementação computacional finita: [[id: "algebra--relation--rust"][Relações em Rust]]

@@ -1,0 +1,98 @@
+:PROPERTIES:
+:ID:       algebra--order-relation--lean
+:END:
+#+TITLE: Relações de Ordem em Lean 4
+#+DATE: [2026-11-27 sex]
+#+DESCRIPTION: Formalização de Preorder, PartialOrder, LinearOrder e Lattice em Lean 4, com provas da unicidade de supremos e equivalência ordem-reticulado.
+#+STATUS: semente
+#+NOTE_TYPE: conceito
+#+FILETAGS: :algebra:lean:order-theory:formal-specification:conceito:publish:
+
+* Visão Geral
+No Lean 4, formalizamos a hierarquia de [[id: "algebra--order-relation--def"][Relação de Ordem e Reticulados]] utilizando *type classes* estendidas a partir das propriedades de [[id: "algebra--relation--lean"][Relações em Lean 4]]. Provamos a **unicidade do supremo**, a **dualidade de ordem** (se $(P, \le)$ é um poset, então $(P, \ge)$ também é um poset) e a **caracterização algébrica da ordem** em um reticulado ($a \le b \iff a \wedge b = a$).
+
+* Formalização e Provas em Lean 4
+#+begin_src lean4 :tangle lean/StrangeAlgebras/OrderRelation.lean
+import StrangeAlgebras.Relation
+
+namespace StrangeAlgebras.Concepts
+
+/-- Pré-ordem: relação reflexiva e transitiva -/
+class Preorder (α : Type u) where
+  le       : α → α → Prop
+  le_refl  : ∀ a : α, le a a
+  le_trans : ∀ {a b c : α}, le a b → le b c → le a c
+
+infix:50 " ≤ₚ " => Preorder.le
+
+/-- Ordem Parcial (Poset): pré-ordem antissimétrica -/
+class PartialOrder (α : Type u) extends Preorder α where
+  le_antisymm : ∀ {a b : α}, a ≤ₚ b → b ≤ₚ a → a = b
+
+/-- Ordem Total (Cadeia): ordem parcial onde todo par é comparável -/
+class LinearOrder (α : Type u) extends PartialOrder α where
+  le_total : ∀ a b : α, a ≤ₚ b ∨ b ≤ₚ a
+
+section PosetTheorems
+variable {α : Type u} [PartialOrder α]
+
+/-- Definição: `s` é supremo (menor cota superior) de `a` e `b` -/
+def IsSup (a b s : α) : Prop :=
+  (a ≤ₚ s ∧ b ≤ₚ s) ∧ (∀ u : α, a ≤ₚ u → b ≤ₚ u → s ≤ₚ u)
+
+/-- Teorema 1 (Unicidade do Supremo): se s₁ e s₂ são supremos de {a, b}, então s₁ = s₂ -/
+theorem sup_unique {a b s₁ s₂ : α} (h₁ : IsSup a b s₁) (h₂ : IsSup a b s₂) : s₁ = s₂ := by
+  have h12 : s₁ ≤ₚ s₂ := h₁.2 s₂ h₂.1.1 h₂.1.2
+  have h21 : s₂ ≤ₚ s₁ := h₂.2 s₁ h₁.1.1 h₁.1.2
+  exact PartialOrder.le_antisymm h12 h21
+
+/-- Ordem Dual (Poset oposto Pᵒᵖ): inverter a relação preserva os axiomas de Poset -/
+def dualPartialOrder : PartialOrder α where
+  le          := fun a b => b ≤ₚ a
+  le_refl     := fun a => Preorder.le_refl a
+  le_trans    := fun hab hbc => Preorder.le_trans hbc hab
+  le_antisymm := fun hab hba => PartialOrder.le_antisymm hba hab
+
+end PosetTheorems
+
+/-- Reticulado (Lattice): Poset munido de operações `inf` (∧) e `sup` (∨) -/
+class Lattice (α : Type u) extends PartialOrder α where
+  inf          : α → α → α
+  sup          : α → α → α
+  inf_le_left  : ∀ a b : α, inf a b ≤ₚ a
+  inf_le_right : ∀ a b : α, inf a b ≤ₚ b
+  le_inf       : ∀ {a b c : α}, c ≤ₚ a → c ≤ₚ b → c ≤ₚ inf a b
+  le_sup_left  : ∀ a b : α, a ≤ₚ sup a b
+  le_sup_right : ∀ a b : α, b ≤ₚ sup a b
+  sup_le       : ∀ {a b c : α}, a ≤ₚ c → b ≤ₚ c → sup a b ≤ₚ c
+
+infixl:70 " ⊓ " => Lattice.inf
+infixl:65 " ⊔ " => Lattice.sup
+
+section LatticeTheorems
+variable {α : Type u} [Lattice α]
+
+/-- Teorema 2 (Caracterização da Ordem via Ínfimo): a ≤ b ↔ a ⊓ b = a -/
+theorem le_iff_inf_eq (a b : α) : (a ≤ₚ b) ↔ (a ⊓ b = a) := by
+  constructor
+  · intro hab
+    apply PartialOrder.le_antisymm
+    · exact Lattice.inf_le_left a b
+    · exact Lattice.le_inf (Preorder.le_refl a) hab
+  · intro h_eq
+    calc a = a ⊓ b := h_eq.symm
+         _ ≤ₚ b    := Lattice.inf_le_right a b
+
+/-- Teorema 3 (Idempotência do Ínfimo): a ⊓ a = a -/
+theorem inf_idem (a : α) : (a ⊓ a) = a :=
+  (le_iff_inf_eq a a).mp (Preorder.le_refl a)
+
+end LatticeTheorems
+end StrangeAlgebras.Concepts
+#+end_src
+
+* Conexões
+- Definição matemática abstrata: [[id: "algebra--order-relation--def"][Relação de Ordem e Reticulados]]
+- Base relacional em Lean 4: [[id: "algebra--relation--lean"][Relações em Lean 4]]
+- Especificação em Maude: [[id: "algebra--order-relation--maude"][Relações de Ordem em Maude]]
+- Implementação em Rust: [[id: "algebra--order-relation--rust"][Relações de Ordem em Rust]]

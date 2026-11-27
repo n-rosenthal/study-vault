@@ -1,0 +1,92 @@
+:PROPERTIES:
+:ID:       algebra--equivalence-relation--maude
+:END:
+#+TITLE: Relações de Equivalência em Maude
+#+DATE: [2026-11-27 sex]
+#+DESCRIPTION: Especificação de relações de equivalência, fecho reflexivo-simétrico-transitivo e representantes canônicos de classes em Maude.
+#+STATUS: semente
+#+NOTE_TYPE: conceito
+#+FILETAGS: :algebra:maude:formal-specification:conceito:publish:
+
+* Visão Geral
+Na lógica equacional do Maude, toda igualdade ~eq t1 = t2~ já define implicitamente uma **congruência** (uma [[id: "algebra--equivalence-relation--def"][Relação de Equivalência e Conjunto Quociente]] compatível com os construtores). Quando queremos computar explicitamente o quociente de uma [[id: "algebra--relation--maude"][Relações em Maude]] finita $R$, construímos o **fecho reflexivo-simétrico-transitivo** de $R$ e extraímos a classe de equivalência $[x]_{\sim}$.
+
+* Módulo Funcional ~EQUIVALENCE-RELATION~
+#+begin_src maude
+fmod EQUIVALENCE-RELATION is
+  protecting BOOL .
+  sorts Elt EltSet Pair Rel .
+  subsort Elt < EltSet .
+  subsort Pair < Rel .
+
+  --- Elementos de exemplo
+  ops a b c d : -> Elt [ctor] .
+
+  --- Conjunto de elementos (para representar classes de equivalência [a])
+  op emptySet : -> EltSet [ctor] .
+  op _|_      : EltSet EltSet -> EltSet [ctor assoc comm id: emptySet] .
+  eq X:Elt | X:Elt = X:Elt .
+
+  --- Pares e Relações (herdado conceitualmente de BINARY-RELATION)
+  op (_,_) : Elt Elt -> Pair [ctor] .
+  op empty : -> Rel [ctor] .
+  op _;_   : Rel Rel -> Rel [ctor assoc comm id: empty] .
+  eq (X:Elt, Y:Elt) ; (X:Elt, Y:Elt) = (X:Elt, Y:Elt) .
+
+  vars X Y Z : Elt .
+  vars R S   : Rel .
+  vars D     : EltSet .
+
+  --- Fecho Reflexivo sobre um domínio D
+  op reflClosure : EltSet Rel -> Rel .
+  eq reflClosure(emptySet, R)   = R .
+  eq reflClosure((X | D), R)    = reflClosure(D, (X, X) ; R) .
+
+  --- Fecho Simétrico: R ∪ R⁻¹
+  op symClosure : Rel -> Rel .
+  eq symClosure(empty)          = empty .
+  eq symClosure((X, Y) ; R)     = (X, Y) ; (Y, X) ; symClosure(R) .
+
+  --- Passo de composição transitiva
+  op stepTrans : Pair Rel -> Rel .
+  eq stepTrans((X, Y), empty)        = empty .
+  eq stepTrans((X, Y), (Y, Z) ; S)   = (X, Z) ; stepTrans((X, Y), S) .
+  eq stepTrans((X, Y), S)            = empty [owise] .
+
+  op transStepAll : Rel Rel -> Rel .
+  eq transStepAll(empty, S)          = empty .
+  eq transStepAll((X, Y) ; R, S)     = stepTrans((X, Y), S) ; transStepAll(R, S) .
+
+  --- Fecho Transitivo (ponto fixo da adição de caminhos de comprimento 2)
+  op transClosure : Rel -> Rel .
+  ceq transClosure(R) = transClosure(R ; transStepAll(R, R))
+   if (R ; transStepAll(R, R)) =/= R .
+  eq transClosure(R) = R [owise] .
+
+  --- Fecho de Equivalência Eq(R) sobre o domínio D
+  op equivClosure : EltSet Rel -> Rel .
+  eq equivClosure(D, R) = transClosure(symClosure(reflClosure(D, R))) .
+
+  --- Extração da Classe de Equivalência [X]_~ = { Y | (X, Y) ∈ Eq(R) }
+  op classOf : Elt Rel -> EltSet .
+  eq classOf(X, empty)        = emptySet .
+  eq classOf(X, (X, Y) ; R)   = Y | classOf(X, R) .
+  eq classOf(X, R)            = emptySet [owise] .
+endfm
+#+end_src
+
+* Redução Executável
+#+begin_src maude
+--- Partindo apenas de a ~ b e b ~ c sobre {a, b, c, d}:
+reduce classOf(a, equivClosure(a | b | c | d, (a, b) ; (b, c))) .
+--- Resultado: a | b | c
+
+reduce classOf(d, equivClosure(a | b | c | d, (a, b) ; (b, c))) .
+--- Resultado: d
+#+end_src
+
+* Conexões
+- Definição matemática abstrata: [[id: "algebra--equivalence-relation--def"][Relação de Equivalência e Conjunto Quociente]]
+- Base relacional em Maude: [[id: "algebra--relation--maude"][Relações em Maude]]
+- Formalização em Lean 4: [[id: "algebra--equivalence-relation--lean"][Relações de Equivalência em Lean 4]]
+- Implementação em Rust: [[id: "algebra--equivalence-relation--rust"][Relações de Equivalência em Rust]]

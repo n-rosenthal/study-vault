@@ -1,0 +1,92 @@
+:PROPERTIES:
+:ID:       algebra--equivalence-relation--lean
+:END:
+#+TITLE: Relações de Equivalência em Lean 4
+#+DATE: [2026-11-27 sex]
+#+DESCRIPTION: Formalização de Equivalence, Setoid e do tipo quociente nativo (Quotient / Quot.lift) em Lean 4, com provas da igualdade de classes e propriedade universal.
+#+STATUS: semente
+#+NOTE_TYPE: conceito
+#+FILETAGS: :algebra:lean:formal-specification:conceito:publish:
+
+* Visão Geral
+O núcleo do Lean 4 possui suporte nativo a tipos quocientes (~Quot~ e ~Quotient~), tornando a construção de [[id: "algebra--equivalence-relation--def"][Relação de Equivalência e Conjunto Quociente]] uma operação primitiva do sistema de tipos. Aqui conectamos as definições de [[id: "algebra--relation--lean"][Relações em Lean 4]] à estrutura ~Equivalence~, provamos o **Teorema Fundamental das Classes de Equivalência** ($a \sim b \iff [a] = [b]$) e demonstramos o levantamento de funções (~Quotient.lift~) pela Propriedade Universal.
+
+* Formalização e Provas em Lean 4
+#+begin_src lean4 :tangle lean/StrangeAlgebras/EquivalenceRelation.lean
+import StrangeAlgebras.Relation
+
+namespace StrangeAlgebras.Concepts
+
+/-- Estrutura que empacota uma relação binária R : α → α → Prop
+    junto com as provas de reflexividade, simetria e transitividade. -/
+structure EquivRel (α : Type u) where
+  rel   : Rel α α
+  refl  : Reflexive rel
+  symm  : Symmetric rel
+  trans : Transitive rel
+
+/-- Classe de equivalência [a]_~ representada como subconjunto (predicado α → Prop) -/
+def equivClass {α : Type u} (E : EquivRel α) (a : α) : α → Prop :=
+  fun x => E.rel x a
+
+/-- Teorema 1a: Todo elemento pertence à sua própria classe de equivalência -/
+theorem mem_equivClass_self {α : Type u} (E : EquivRel α) (a : α) :
+    equivClass E a a :=
+  E.refl a
+
+/-- Teorema 1b (Teorema Fundamental): a ~ b ↔ [a]_~ = [b]_~ -/
+theorem equivClass_eq_iff {α : Type u} (E : EquivRel α) (a b : α) :
+    E.rel a b ↔ equivClass E a = equivClass E b := by
+  constructor
+  · -- Direção (→): se a ~ b, então [a] = [b] por extensionalidade funcional e proposicional
+    intro hab
+    funext x
+    apply propext
+    constructor
+    · intro hxa -- x ~ a e a ~ b → x ~ b
+      exact E.trans hxa hab
+    · intro hxb -- x ~ b e b ~ a → x ~ a
+      exact E.trans hxb (E.symm hab)
+  · -- Direção (←): se [a] = [b], como a ∈ [a], temos a ∈ [b], ou seja, a ~ b
+    intro h_eq
+    have ha : equivClass E a a := E.refl a
+    rw [h_eq] at ha
+    exact ha
+
+/-- Conexão com o tipo Quotient nativo do Lean 4 (Setoid):
+    Converte nossa `EquivRel α` em um `Setoid α` da biblioteca padrão. -/
+def toSetoid {α : Type u} (E : EquivRel α) : Setoid α where
+  r := E.rel
+  iseqv := {
+    refl  := E.refl
+    symm  := @E.symm
+    trans := @E.trans
+  }
+
+/-- Exemplo concreto: Congruência módulo n sobre os Inteiros (a ≡ b mod n) -/
+def intModSetoid (n : Int) : Setoid Int where
+  r a b := (a % n) = (b % n)
+  iseqv := {
+    refl  := fun _ => rfl
+    symm  := fun h => h.symm
+    trans := fun h1 h2 => h1.trans h2
+  }
+
+/-- Exemplo da Propriedade Universal (Quotient.lift):
+    A função de paridade `isEven : Int → Bool` respeita a congruência módulo 2,
+    logo desce para uma função bem-definida sobre `Quotient (intModSetoid 2)`. -/
+def isEvenMod2 : Quotient (intModSetoid 2) → Bool :=
+  Quotient.lift
+    (fun x : Int => x % 2 == 0)
+    (fun (a b : Int) (h : a % 2 = b % 2) => by
+      dsimp
+      rw [h])
+
+end StrangeAlgebras.Concepts
+#+end_src
+
+* Conexões
+- Definição matemática abstrata: [[id: "algebra--equivalence-relation--def"][Relação de Equivalência e Conjunto Quociente]]
+- Base relacional em Lean 4: [[id: "algebra--relation--lean"][Relações em Lean 4]]
+- Especificação em Maude: [[id: "algebra--equivalence-relation--maude"][Relações de Equivalência em Maude]]
+- Implementação em Rust: [[id: "algebra--equivalence-relation--rust"][Relações de Equivalência em Rust]]

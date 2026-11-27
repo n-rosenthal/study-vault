@@ -1,0 +1,48 @@
+:PROPERTIES:
+:ID:       algebra--order-relation--def
+:END:
+#+TITLE: Relação de Ordem e Reticulados
+#+DATE: [2026-11-27 sex]
+#+DESCRIPTION: Definição formal de pré-ordem, ordem parcial (poset), ordem total, elementos extremos e reticulados.
+#+STATUS: semente
+#+NOTE_TYPE: conceito
+#+FILETAGS: :algebra:order-theory:conceito:publish:
+
+* Definição Formal
+Uma [[id: "algebra--relation--def"][Relação]] homogênea ${\le} \subseteq P \times P$ sobre um conjunto $P$ admite uma hierarquia de estruturas conforme os axiomas que satisfaz para quaisquer $a, b, c \in P$:
+
+1. *Pré-ordem (Quasi-ordem):* É reflexiva ($a \le a$) e transitiva ($a \le b \land b \le c \implies a \le c$).
+2. *Ordem Parcial (Poset — Partially Ordered Set):* É uma pré-ordem **antissimétrica**:
+   $$(a \le b \;\land\; b \le a) \implies a = b.$$
+3. *Ordem Total (Cadeia / Ordem Linear):* É uma ordem parcial em que quaisquer dois elementos são comparáveis:
+   $$\forall a, b \in P,\quad a \le b \;\lor\; b \le a.$$
+4. *Boa-Ordem:* É uma ordem total na qual todo subconjunto não-vazio $S \subseteq P$ possui um elemento mínimo.
+
+*(Nota: Todo conjunto pré-ordenado $(P, \lesssim)$ induz naturalmente uma [[id: "algebra--equivalence-relation--def"][Relação de Equivalência e Conjunto Quociente]] dada por $a \sim b \iff (a \lesssim b \land b \lesssim a)$, tornando o quociente $P/{\sim}$ um Poset).*
+
+* Elementos Distintos e Limites em um Poset $(P, \le)$
+Seja $S \subseteq P$ um subconjunto e $m \in P$:
+- *Elemento Minimal / Maximal:* $m \in S$ é minimal em $S$ se $\forall x \in S,\; x \le m \implies x = m$ (e maximal se $m \le x \implies x = m$).
+- *Mínimo / Máximo:* $m \in S$ é mínimo de $S$ se $\forall x \in S,\; m \le x$ (único pela antissimetria).
+- *Ínfimo ($\bigwedge S$, meet) e Supremo ($\bigvee S$, join):* Respectivamente, a maior cota inferior e a menor cota superior de $S$ em $P$.
+
+* Reticulados (Lattices)
+Um poset $(L, \le)$ é um **reticulado** se todo par de elementos $\{a, b\} \subseteq L$ admite um supremo $a \vee b = \sup\{a, b\}$ (*join*) e um ínfimo $a \wedge b = \inf\{a, b\}$ (*meet*).
+
+* Teorema Elementar (Unicidade do Supremo e Caracterização Algébrica)
+*Proposição.* Em um poset $(P, \le)$:
+1. Se o supremo de $S \subseteq P$ existe, ele é único.
+2. Em um reticulado, $a \le b \iff a \wedge b = a \iff a \vee b = b$.
+
+/Demonstração./
+1. Se $s_1$ e $s_2$ são ambos menores cotas superiores de $S$, então $s_1 \le s_2$ (pois $s_2$ é cota superior e $s_1$ é a menor) e $s_2 \le s_1$; pela antissimetria, $s_1 = s_2$.
+2. Se $a \le b$, como $a \le a$, $a$ é cota inferior de $\{a, b\}$; qualquer outra cota inferior $c$ satisfaz $c \le a$, logo $\inf\{a, b\} = a$. Reciprocamente, se $a \wedge b = a$, como $a \wedge b \le b$, segue $a \le b$. O caso de $a \vee b = b$ é dual. $\blacksquare$
+
+* Papel na Álgebra de Lang
+- **Reticulado de Subestruturas:** Os subgrupos de um grupo $G$, os ideais de um anel $R$ e os subcorpos intermediários de uma extensão $E/F$ (Teorema Fundamental de Galois) formam reticulados completos sob inclusão $\subseteq$.
+- **Lema de Zorn (Cap. I / Apêndice):** Se toda cadeia em um poset não-vazio $P$ tem cota superior, então $P$ possui ao menos um elemento maximal — princípio utilizado por Lang para provar que todo anel comutativo com unidade possui um ideal maximal e que todo espaço vetorial possui base.
+
+* Realizações Computacionais e Formais
+- Especificação equacional em Maude: [[id: "algebra--order-relation--maude"][Relações de Ordem em Maude]]
+- Formalização dependente e provas em Lean 4: [[id: "algebra--order-relation--lean"][Relações de Ordem em Lean 4]]
+- Estrutura de Poset finito, diagrama de Hasse e reticulado em Rust: [[id: "algebra--order-relation--rust"][Relações de Ordem em Rust]]

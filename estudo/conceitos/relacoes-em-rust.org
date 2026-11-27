@@ -1,0 +1,149 @@
+:PROPERTIES:
+:ID:       algebra--relation--rust
+:END:
+#+TITLE: Relações em Rust
+#+DATE: [2026-11-27 sex]
+#+DESCRIPTION: Implementação computacional de relações binárias finitas em Rust sobre conjuntos ordenados (BTreeSet) com verificação de propriedades algébricas.
+#+STATUS: semente
+#+NOTE_TYPE: conceito
+#+FILETAGS: :algebra:rust:conceito:publish:
+
+* Visão Geral
+Para computar efetivamente com o conceito de [[id: "algebra--relation--def"][Relação]] sobre domínios finitos, representamos $R \subseteq A \times B$ em Rust como uma estrutura genérica ~Relation<A, B>~ apoiada em ~BTreeSet<(A, B)>~. O uso de ~BTreeSet~ garante representação canônica ordenada, ausência de pares duplicados (espelhando a idempotência da união em [[id: "algebra--relation--maude"][Relações em Maude]]) e igualdade estrutural determinística.
+
+* Implementação em Rust
+#+begin_src rust :tangle rust/crates/algebra-core/src/relation.rs
+use std::collections::BTreeSet;
+
+/// Representa uma relação binária finita R ⊆ A × B
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Relation<A: Ord + Clone, B: Ord + Clone> {
+    pairs: BTreeSet<(A, B)>,
+}
+
+impl<A: Ord + Clone, B: Ord + Clone> Relation<A, B> {
+    pub fn empty() -> Self {
+        Self {
+            pairs: BTreeSet::new(),
+        }
+    }
+
+    pub fn from_pairs<I>(iter: I) -> Self
+    where
+        I: IntoIterator<Item = (A, B)>,
+    {
+        Self {
+            pairs: iter.into_iter().collect(),
+        }
+    }
+
+    pub fn insert(&mut self, a: A, b: B) -> bool {
+        self.pairs.insert((a, b))
+    }
+
+    pub fn contains(&self, a: &A, b: &B) -> bool {
+        self.pairs.contains(&(a.clone(), b.clone()))
+    }
+
+    /// Relação Inversa R⁻¹ ⊆ B × A
+    pub fn inverse(&self) -> Relation<B, A> {
+        let pairs = self
+            .pairs
+            .iter()
+            .map(|(a, b)| (b.clone(), a.clone()))
+            .collect();
+        Relation { pairs }
+    }
+
+    /// Composição de Relações: other ∘ self ⊆ A × C
+    /// (a, c) ∈ other ∘ self ⇔ ∃ b ∈ B, (a, b) ∈ self ∧ (b, c) ∈ other
+    pub fn compose<C: Ord + Clone>(&self, other: &Relation<B, C>) -> Relation<A, C> {
+        let mut pairs = BTreeSet::new();
+        for (a, b1) in &self.pairs {
+            for (b2, c) in &other.pairs {
+                if b1 == b2 {
+                    pairs.insert((a.clone(), c.clone()));
+                }
+            }
+        }
+        Relation { pairs }
+    }
+}
+
+/// Métodos exclusivos para endorrelações R ⊆ A × A sobre um domínio explícito
+impl<A: Ord + Clone> Relation<A, A> {
+    /// Relação Identidade id_A = { (a, a) | a ∈ domain }
+    pub fn identity(domain: &[A]) -> Self {
+        let pairs = domain
+            .iter()
+            .map(|a| (a.clone(), a.clone()))
+            .collect();
+        Self { pairs }
+    }
+
+    /// Verifica se R é reflexiva sobre `domain`: ∀ a ∈ domain, (a, a) ∈ R
+    pub fn is_reflexive(&self, domain: &[A]) -> bool {
+        domain.iter().all(|a| self.contains(a, a))
+    }
+
+    /// Verifica se R é simétrica: R = R⁻¹
+    pub fn is_symmetric(&self) -> bool {
+        *self == self.inverse()
+    }
+
+    /// Verifica se R é antissimétrica: (a, b) ∈ R ∧ (b, a) ∈ R ⇒ a = b
+    pub fn is_antisymmetric(&self) -> bool {
+        self.pairs
+            .iter()
+            .all(|(a, b)| a == b || !self.contains(b, a))
+    }
+
+    /// Verifica se R é transitiva: (R ∘ R) ⊆ R
+    pub fn is_transitive(&self) -> bool {
+        let comp = self.compose(self);
+        comp.pairs.is_subset(&self.pairs)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_relation_involution_and_composition() {
+        let r = Relation::from_pairs(vec![('a', 1), ('b', 2)]);
+        let s = Relation::from_pairs(vec![(1, "x"), (2, "y"), (3, "z")]);
+
+        // Teorema da Involução: (R⁻¹)⁻¹ == R
+        assert_eq!(r.inverse().inverse(), r);
+
+        // Composição s ∘ r
+        let sr = r.compose(&s);
+        assert_eq!(sr, Relation::from_pairs(vec![('a', "x"), ('b', "y")]));
+
+        // Contravariância da inversa: (s ∘ r)⁻¹ == r⁻¹ ∘ s⁻¹
+        assert_eq!(sr.inverse(), s.inverse().compose(&r.inverse()));
+    }
+
+    #[test]
+    fn test_endorelation_properties() {
+        let domain = vec![1, 2, 3];
+        // Relação de divisibilidade em {1, 2, 3} (ordem parcial: reflexiva, antissimétrica, transitiva)
+        let div_rel = Relation::from_pairs(vec![
+            (1, 1), (1, 2), (1, 3),
+            (2, 2),
+            (3, 3),
+        ]);
+
+        assert!(div_rel.is_reflexive(&domain));
+        assert!(!div_rel.is_symmetric());
+        assert!(div_rel.is_antisymmetric());
+        assert!(div_rel.is_transitive());
+    }
+}
+#+end_src
+
+* Conexões
+- Definição matemática abstrata: [[id: "algebra--relation--def"][Relação]]
+- Especificação equacional em Maude: [[id: "algebra--relation--maude"][Relações em Maude]]
+- Formalização dependente em Lean 4: [[id: "algebra--relation--lean"][Relações em Lean 4]]

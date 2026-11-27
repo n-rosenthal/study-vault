@@ -1,0 +1,39 @@
+:PROPERTIES:
+:ID:       algebra--relation--def
+:END:
+#+TITLE: Relação
+#+DATE: [2026-11-27 sex]
+#+DESCRIPTION: Definição conjuntista de relação binária, operações algébricas (inversa e composição) e propriedades estruturais fundamentais.
+#+STATUS: semente
+#+NOTE_TYPE: conceito
+#+FILETAGS: :algebra:conceito:publish:
+
+* Definição Formal
+Sejam $A$ e $B$ dois conjuntos. Uma **relação binária** $R$ de $A$ em $B$ é um subconjunto do produto cartesiano $A \times B$:
+$$R \subseteq A \times B.$$
+Escrevemos $a \mathrel{R} b$ (ou $(a, b) \in R$) para indicar que $a \in A$ está relacionado com $b \in B$. Quando $A = B$, dizemos que $R$ é uma **relação homogênea** (ou endorrelação) sobre $A$.
+
+* Operações Fundamentais
+1. *Relação Identidade ($\mathrm{id}_A$):*
+   $$\mathrm{id}_A = \{ (a, a) \mid a \in A \}.$$
+2. *Relação Inversa ou Transposta ($R^{-1}$):* Dada $R \subseteq A \times B$, definimos $R^{-1} \subseteq B \times A$ por
+   $$R^{-1} = \{ (b, a) \in B \times A \mid (a, b) \in R \}.$$
+3. *Composição de Relações ($S \circ R$):* Dadas $R \subseteq A \times B$ e $S \subseteq B \times C$, a composta $S \circ R \subseteq A \times C$ é
+   $$S \circ R = \{ (a, c) \in A \times C \mid \exists b \in B,\; (a, b) \in R \;\land\; (b, c) \in S \}.$$
+
+* Propriedades de Endorrelações ($R \subseteq A \times A$)
+- *Reflexiva:* $\forall a \in A,\; (a, a) \in R$ (equivalente a $\mathrm{id}_A \subseteq R$).
+- *Simétrica:* $\forall a, b \in A,\; (a, b) \in R \implies (b, a) \in R$ (equivalente a $R = R^{-1}$).
+- *Antissimétrica:* $\forall a, b \in A,\; ((a, b) \in R \land (b, a) \in R) \implies a = b$ (equivalente a $R \cap R^{-1} \subseteq \mathrm{id}_A$).
+- *Transitiva:* $\forall a, b, c \in A,\; ((a, b) \in R \land (b, c) \in R) \implies (a, c) \in R$ (equivalente a $R \circ R \subseteq R$).
+
+* Teorema Elementar (Involução da Inversa)
+*Proposição.* Para toda relação $R \subseteq A \times B$, vale $(R^{-1})^{-1} = R$.
+
+/Demonstração./ Por dupla inclusão conjuntista:
+$$(a, b) \in (R^{-1})^{-1} \iff (b, a) \in R^{-1} \iff (a, b) \in R. \quad \blacksquare$$
+
+* Realizações Computacionais e Formais
+- Especificação equacional em Maude: [[id: "algebra--relation--maude"][Relações em Maude]]
+- Formalização dependente e provas em Lean 4: [[id: "algebra--relation--lean"][Relações em Lean 4]]
+- Estrutura de dados e operações finitas em Rust: [[id: "algebra--relation--rust"][Relações em Rust]]

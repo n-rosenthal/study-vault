@@ -1,0 +1,180 @@
+:PROPERTIES:
+:ID:       algebra--order-relation--rust
+:END:
+#+TITLE: Relações de Ordem em Rust
+#+DATE: [2026-11-27 sex]
+#+DESCRIPTION: Implementação computacional de Posets finitos, redução transitiva (Diagrama de Hasse), elementos extremos e verificação de Reticulados em Rust.
+#+STATUS: semente
+#+NOTE_TYPE: conceito
+#+FILETAGS: :algebra:rust:order-theory:conceito:publish:
+
+* Visão Geral
+Para trabalhar computacionalmente com [[id: "algebra--order-relation--def"][Relação de Ordem e Reticulados]] sobre conjuntos finitos, construímos `Poset<T>` sobre [[id: "algebra--relation--rust"][Relações em Rust]]. Além de validar os axiomas de ordem parcial (reflexividade, antissimetria e transitividade), implementamos:
+1. **Redução Transitiva (`hasse_diagram`):** Extrai as relações de cobertura ($a \lessdot b$, i.e., $a < b$ sem nenhum $c$ tal que $a < c < b$), que correspondem exatamente às arestas do **Diagrama de Hasse**.
+2. **Elementos Minimais e Maximais** (`minimals`, `maximals`).
+3. **Cálculo de Ínfimo ($\bigwedge$) e Supremo ($\bigvee$)** (`meet`, `join`) e verificação automática de **Reticulado** (`is_lattice`).
+
+* Implementação em Rust
+#+begin_src rust :tangle rust/crates/algebra-core/src/order.rs
+use std::collections::BTreeSet;
+use crate::relation::Relation;
+
+/// Representa um Conjunto Parcialmente Ordenado (Poset) finito (P, ≤)
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Poset<T: Ord + Clone> {
+    domain: Vec<T>,
+    le_rel: Relation<T, T>,
+}
+
+impl<T: Ord + Clone> Poset<T> {
+    /// Constrói um Poset validando reflexividade, antissimetria e transitividade.
+    /// Retorna Err caso algum axioma seja violado.
+    pub fn try_new(domain: Vec<T>, le_rel: Relation<T, T>) -> Result<Self, &'static str> {
+        if !le_rel.is_reflexive(&domain) {
+            return Err("A relação não é reflexiva sobre o domínio.");
+        }
+        if !le_rel.is_antisymmetric() {
+            return Err("A relação não é antissimétrica.");
+        }
+        if !le_rel.is_transitive() {
+            return Err("A relação não é transitiva.");
+        }
+        Ok(Self { domain, le_rel })
+    }
+
+    /// Testa se a ≤ b
+    pub fn le(&self, a: &T, b: &T) -> bool {
+        self.le_rel.contains(a, b)
+    }
+
+    /// Testa ordem estrita: a < b ⇔ (a ≤ b ∧ a ≠ b)
+    pub fn lt(&self, a: &T, b: &T) -> bool {
+        a != b && self.le(a, b)
+    }
+
+    /// Relação de cobertura (Diagrama de Hasse): a ⋖ b ⇔ a < b e não existe c com a < c < b
+    pub fn hasse_diagram(&self) -> Relation<T, T> {
+        let mut covers = BTreeSet::new();
+        for a in &self.domain {
+            for b in &self.domain {
+                if self.lt(a, b) {
+                    let has_intermediate = self
+                        .domain
+                        .iter()
+                        .any(|c| self.lt(a, c) && self.lt(c, b));
+                    if !has_intermediate {
+                        covers.insert((a.clone(), b.clone()));
+                    }
+                }
+            }
+        }
+        Relation::from_pairs(covers)
+    }
+
+    /// Elementos minimais do Poset: não existe x < m
+    pub fn minimals(&self) -> Vec<T> {
+        self.domain
+            .iter()
+            .filter(|m| !self.domain.iter().any(|x| self.lt(x, m)))
+            .cloned()
+            .collect()
+    }
+
+    /// Elementos maximais do Poset: não existe x > m
+    pub fn maximals(&self) -> Vec<T> {
+        self.domain
+            .iter()
+            .filter(|m| !self.domain.iter().any(|x| self.lt(m, x)))
+            .cloned()
+            .collect()
+    }
+
+    /// Ínfimo (Meet): a ∧ b = greatest lower bound de {a, b}
+    pub fn meet(&self, a: &T, b: &T) -> Option<T> {
+        let lower_bounds: Vec<&T> = self
+            .domain
+            .iter()
+            .filter(|c| self.le(c, a) && self.le(c, b))
+            .collect();
+
+        // Procura a maior cota inferior (maior que todas as outras cotas inferiores)
+        lower_bounds
+            .iter()
+            .find(|&&candidate| lower_bounds.iter().all(|&lb| self.le(lb, candidate)))
+            .map(|&glb| glb.clone())
+    }
+
+    /// Supremo (Join): a ∨ b = least upper bound de {a, b}
+    pub fn join(&self, a: &T, b: &T) -> Option<T> {
+        let upper_bounds: Vec<&T> = self
+            .domain
+            .iter()
+            .filter(|c| self.le(a, c) && self.le(b, c))
+            .collect();
+
+        // Procura a menor cota superior
+        upper_bounds
+            .iter()
+            .find(|&&candidate| upper_bounds.iter().all(|&ub| self.le(candidate, ub)))
+            .map(|&lub| lub.clone())
+    }
+
+    /// Verifica se o Poset é um Reticulado (todo par possui meet e join)
+    pub fn is_lattice(&self) -> bool {
+        for a in &self.domain {
+            for b in &self.domain {
+                if self.meet(a, b).is_none() || self.join(a, b).is_none() {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_divisor_lattice_d12() {
+        // Reticulado de divisibilidade D_12 = {1, 2, 3, 4, 6, 12}
+        let domain = vec![1, 2, 3, 4, 6, 12];
+        let mut pairs = BTreeSet::new();
+        for &a in &domain {
+            for &b in &domain {
+                if b % a == 0 {
+                    pairs.insert((a, b));
+                }
+            }
+        }
+
+        let poset = Poset::try_new(domain, Relation::from_pairs(pairs))
+            .expect("Divisibilidade é uma ordem parcial");
+
+        assert!(poset.is_lattice());
+        assert_eq!(poset.minimals(), vec![1]);
+        assert_eq!(poset.maximals(), vec![12]);
+
+        // Meet é o MDC e Join é o MMC!
+        assert_eq!(poset.meet(&4, &6), Some(2));
+        assert_eq!(poset.join(&4, &6), Some(12));
+
+        // Diagrama de Hasse de D_12 tem 7 arestas de cobertura:
+        // (1,2), (1,3), (2,4), (2,6), (3,6), (4,12), (6,12)
+        let hasse = poset.hasse_diagram();
+        assert_eq!(
+            hasse,
+            Relation::from_pairs(vec![
+                (1, 2), (1, 3), (2, 4), (2, 6), (3, 6), (4, 12), (6, 12)
+            ])
+        );
+    }
+}
+#+end_src
+
+* Conexões
+- Definição matemática abstrata: [[id: "algebra--order-relation--def"][Relação de Ordem e Reticulados]]
+- Base relacional em Rust: [[id: "algebra--relation--rust"][Relações em Rust]]
+- Especificação em Maude: [[id: "algebra--order-relation--maude"][Relações de Ordem em Maude]]
+- Formalização em Lean 4: [[id: "algebra--order-relation--lean"][Relações de Ordem em Lean 4]]

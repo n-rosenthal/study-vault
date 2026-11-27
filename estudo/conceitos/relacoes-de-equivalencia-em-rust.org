@@ -1,0 +1,214 @@
+:PROPERTIES:
+:ID:       algebra--equivalence-relation--rust
+:END:
+#+TITLE: Relações de Equivalência em Rust
+#+DATE: [2026-11-27 sex]
+#+DESCRIPTION: Implementação de relações de equivalência e conjuntos quocientes finitos em Rust via Partição Disjunta (Union-Find) e levantamento universal de funções.
+#+STATUS: semente
+#+NOTE_TYPE: conceito
+#+FILETAGS: :algebra:rust:conceito:publish:
+
+* Visão Geral
+Para representar uma [[id: "algebra--equivalence-relation--def"][Relação de Equivalência e Conjunto Quociente]] em Rust com alta eficiência, utilizamos uma estrutura de **Partição Disjunta (Union-Find com compressão de caminho e união por posto)** mapeando elementos genéricos `T: Ord + Clone` para representantes canônicos. Isso permite:
+1. Verificar $a \sim b$ em tempo quase constante $O(\alpha(n))$.
+2. Construir explicitamente o conjunto quociente $A/{\sim}$ como uma coleção de classes de equivalência.
+3. Implementar o **levantamento universal (`quotient_lift`)** verificando em tempo de execução se $f : A \to B$ respeita a equivalência antes de induzir $\bar{f} : A/{\sim} \to B$.
+
+* Implementação em Rust
+#+begin_src rust :tangle rust/crates/algebra-core/src/equivalence.rs
+use std::collections::{BTreeMap, BTreeSet};
+use crate::relation::Relation;
+
+/// Representa uma Relação de Equivalência finita e seu Conjunto Quociente A / ~
+/// através de uma floresta de conjuntos disjuntos (Union-Find).
+#[derive(Clone, Debug)]
+pub struct EquivalenceRelation<T: Ord + Clone> {
+    elements: Vec<T>,
+    index_of: BTreeMap<T, usize>,
+    parent: Vec<usize>,
+    rank: Vec<usize>,
+}
+
+impl<T: Ord + Clone> EquivalenceRelation<T> {
+    /// Inicializa a relação de equivalência discreta (igualdade: a ~ b ⇔ a == b)
+    /// onde cada elemento do domínio forma sua própria classe unitária [a] = {a}.
+    pub fn discrete(domain: &[T]) -> Self {
+        let mut elements = Vec::new();
+        let mut index_of = BTreeMap::new();
+        for item in domain {
+            if !index_of.contains_key(item) {
+                let idx = elements.len();
+                elements.push(item.clone());
+                index_of.insert(item.clone(), idx);
+            }
+        }
+        let n = elements.len();
+        Self {
+            elements,
+            index_of,
+            parent: (0..n).collect(),
+            rank: vec![0; n],
+        }
+    }
+
+    /// Constrói o fecho de equivalência de uma `Relation<T, T>` arbitrária sobre `domain`
+    pub fn from_relation(domain: &[T], rel: &Relation<T, T>) -> Self {
+        let mut eq_rel = Self::discrete(domain);
+        for a in domain {
+            for b in domain {
+                if rel.contains(a, b) {
+                    eq_rel.relate(a, b);
+                }
+            }
+        }
+        eq_rel
+    }
+
+    fn find_idx(&mut self, i: usize) -> usize {
+        if self.parent[i] != i {
+            let root = self.find_idx(self.parent[i]);
+            self.parent[i] = root; // Compressão de caminho
+        }
+        self.parent[i]
+    }
+
+    /// Identifica dois elementos (impõe a ~ b e fecha por simetria e transitividade)
+    pub fn relate(&mut self, a: &T, b: &T) -> bool {
+        let (&ia, &ib) = match (self.index_of.get(a), self.index_of.get(b)) {
+            (Some(ia), Some(ib)) => (ia, ib),
+            _ => return false,
+        };
+        let ra = self.find_idx(ia);
+        let rb = self.find_idx(ib);
+        if ra == rb {
+            return false; // Já pertencem à mesma classe
+        }
+        if self.rank[ra] < self.rank[rb] {
+            self.parent[ra] = rb;
+        } else if self.rank[ra] > self.rank[rb] {
+            self.parent[rb] = ra;
+        } else {
+            self.parent[rb] = ra;
+            self.rank[ra] += 1;
+        }
+        true
+    }
+
+    /// Testa se a ~ b
+    pub fn are_equivalent(&mut self, a: &T, b: &T) -> bool {
+        match (self.index_of.get(a), self.index_of.get(b)) {
+            (Some(&ia), Some(&ib)) => self.find_idx(ia) == self.find_idx(ib),
+            _ => false,
+        }
+    }
+
+    /// Projeção canônica π : A → A/~ (retorna o representante canônico da classe [a])
+    pub fn project(&mut self, a: &T) -> Option<T> {
+        let &ia = self.index_of.get(a)?;
+        let root = self.find_idx(ia);
+        Some(self.elements[root].clone())
+    }
+
+    /// Retorna o Conjunto Quociente A/~ explícito como lista de classes de equivalência
+    pub fn quotient_set(&mut self) -> Vec<BTreeSet<T>> {
+        let mut classes: BTreeMap<usize, BTreeSet<T>> = BTreeMap::new();
+        for idx in 0..self.elements.len() {
+            let root = self.find_idx(idx);
+            classes
+                .entry(root)
+                .or_default()
+                .insert(self.elements[idx].clone());
+        }
+        classes.into_values().collect()
+    }
+
+    /// Propriedade Universal do Quociente:
+    /// Dada f : T → B, verifica se (a ~ b ⇒ f(a) == f(b)).
+    /// Em caso afirmativo, retorna o mapa induzido f̄ : A/~ → B (indexado pelo representante).
+    pub fn lift<B, F>(&mut self, f: F) -> Result<BTreeMap<T, B>, &'static str>
+    where
+        B: PartialEq,
+        F: Fn(&T) -> B,
+    {
+        let mut lifted: BTreeMap<T, B> = BTreeMap::new();
+        for idx in 0..self.elements.len() {
+            let root = self.find_idx(idx);
+            let rep = self.elements[root].clone();
+            let val = f(&self.elements[idx]);
+
+            if let Some(existing) = lifted.get(&rep) {
+                if existing != &val {
+                    return Err("A função não é constante nas classes de equivalência!");
+                }
+            } else {
+                lifted.insert(rep, val);
+            }
+        }
+        Ok(lifted)
+    }
+
+    /// Converte de volta para `Relation<T, T>` explícita e verifica os 3 axiomas
+    pub fn to_relation(&mut self) -> Relation<T, T> {
+        let mut pairs = BTreeSet::new();
+        for i in 0..self.elements.len() {
+            for j in 0..self.elements.len() {
+                if self.find_idx(i) == self.find_idx(j) {
+                    pairs.insert((self.elements[i].clone(), self.elements[j].clone()));
+                }
+            }
+        }
+        Relation::from_pairs(pairs)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_quotient_partition_and_axioms() {
+        let domain = vec![0, 1, 2, 3, 4, 5];
+        // Congruência módulo 3 em {0, 1, 2, 3, 4, 5}
+        let mut mod3 = EquivalenceRelation::discrete(&domain);
+        mod3.relate(&0, &3);
+        mod3.relate(&1, &4);
+        mod3.relate(&2, &5);
+
+        // O conjunto quociente Z_6 / ~ deve ter exatamente 3 classes de 2 elementos
+        let classes = mod3.quotient_set();
+        assert_eq!(classes.len(), 3);
+        assert!(mod3.are_equivalent(&1, &4));
+        assert!(!mod3.are_equivalent(&1, &5));
+
+        // Verifica os axiomas de relação de equivalência na relação gerada
+        let rel = mod3.to_relation();
+        assert!(rel.is_reflexive(&domain));
+        assert!(rel.is_symmetric());
+        assert!(rel.is_transitive());
+    }
+
+    #[test]
+    fn test_universal_property_lift() {
+        let domain = vec![0, 1, 2, 3, 4, 5];
+        let mut mod3 = EquivalenceRelation::discrete(&domain);
+        mod3.relate(&0, &3);
+        mod3.relate(&1, &4);
+        mod3.relate(&2, &5);
+
+        // f(x) = (x * x) % 3 respeita congruência módulo 3 → levantamento bem-definido!
+        let valid_lift = mod3.lift(|x| (x * x) % 3);
+        assert!(valid_lift.is_ok());
+        assert_eq!(valid_lift.unwrap().len(), 3);
+
+        // g(x) = x % 2 NÃO respeita congruência módulo 3 (0 ~ 3, mas 0%2 != 3%2) → erro!
+        let invalid_lift = mod3.lift(|x| x % 2);
+        assert!(invalid_lift.is_err());
+    }
+}
+#+end_src
+
+* Conexões
+- Definição matemática abstrata: [[id: "algebra--equivalence-relation--def"][Relação de Equivalência e Conjunto Quociente]]
+- Base relacional em Rust: [[id: "algebra--relation--rust"][Relações em Rust]]
+- Especificação em Maude: [[id: "algebra--equivalence-relation--maude"][Relações de Equivalência em Maude]]
+- Formalização em Lean 4: [[id: "algebra--equivalence-relation--lean"][Relações de Equivalência em Lean 4]]
