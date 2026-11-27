@@ -1,0 +1,250 @@
+:PROPERTIES:
+:ID:       a667fc87-3e50-46a7-83b0-e9b031934edd
+:END:
+#+TITLE: Implementando a Especificação Truth-Values em Lean
+#+DATE: [2026-11-27 sex]
+#+DESCRIPTION: Especificação algébrica do módulo TRUTH-VALUES (Maude) traduzida para Lean 4 com provas formais em LaTeX e demonstração da construção de termos de prova.
+#+STATUS: semente
+#+NOTE_TYPE: estudo
+#+FILETAGS: :computer-science/formal-specification:programming/lean:publish:estudo:
+#+PROPERTY: header-args:lean4 :tangle TruthValues.lean :results silent
+
+* Especificação ~TRUTH-VALUES~ em Maude
+Na especificação algébrica em Maude, definimos um módulo funcional (~fmod~) composto pelo sorte ~Truth-Value~, dois construtores livres (~[ctor]~) e operações equacionais. Os atributos ~[assoc comm]~ instruem o motor de reescrita a realizar casamento de padrões módulo associatividade e comutatividade sem exigir equações explícitas para essas leis.
+
+#+begin_src maude
+fmod TRUTH-VALUES is
+ sort Truth-Value .
+
+ --- Construtores para TRUTH-VALUES
+ ops true false : \to Truth-Value [ctor] .
+
+ --- Operadores sobre Truth-Value
+ op _\land_ : Truth-Value Truth-Value \to Truth-Value [assoc comm] .
+ op _\lor_  : Truth-Value Truth-Value \to Truth-Value [assoc comm] .
+ op \not_   : Truth-Value             \to Truth-Value .
+
+ --- Variáveis
+ var P : Truth-Value .
+
+ --- Equações
+ --- Operador NOT (\not)
+ eq \not true  = false .
+ eq \not false = true  .
+
+ --- Conjunção, operador AND (\land)
+ eq true  \land P = P     .
+ eq false \land P = false .
+
+ --- Disjunção, operador OR (\lor)
+ eq true  \lor P = true  .
+ eq false \lor P = P     .
+endfm
+#+end_src
+
+* Especificação ~TruthValue~ em Lean 4
+Diferente do Maude, onde a lógica subjacente é a lógica equacional de reescrita, o Lean 4 baseia-se no Cálculo de Construções Indutivas. Sob a correspondência de Curry-Howard, tipos indutivos correspondem a sortes com construtores livres, definições recursivas correspondem às equações direcionadas, e teoremas correspondem a tipos proposicionais habitados por termos de prova.
+
+** Sorte e Construtores
+Definimos indutivamente o tipo ~TruthValue~ enumerando exaustivamente seus dois construtores canônicos (~t~ e ~f~). O Lean gera automaticamente o princípio de indução/recursão (~TruthValue.rec~), que fundamenta todas as provas por análise de casos.
+
+#+begin_src lean4
+-- Definição do sorte TruthValue por indução sobre seus construtores
+inductive TruthValue where
+  | t : TruthValue
+  | f : TruthValue
+  deriving Repr, DecidableEq
+#+end_src
+
+** /Namespace/ ~TruthValue~ e Operações
+No /namespace/ ~TruthValue~, definimos as operações via casamento de padrões (/pattern matching/). Cada cláusula corresponde a uma equação redutora ($\iota$-redução) no núcleo do Lean.
+
+#+begin_src lean4
+namespace TruthValue
+
+-- Operador negação (neg)
+def neg : TruthValue → TruthValue
+  | t => f
+  | f => t
+
+-- Operador AND (land)
+def land : TruthValue → TruthValue → TruthValue
+  | t, p => p
+  | f, _ => f
+
+-- Operador OR (lor)
+def lor : TruthValue → TruthValue → TruthValue
+  | t, _ => t
+  | f, p => p
+#+end_src
+
+** Representação (Notação Mixfix)
+Em Maude, os sublinhados (~_~) indicam posições de argumentos em operadores /mixfix/. No Lean 4, utilizamos ~scoped prefix~ e ~scoped infixl~ para declarar a precedência e associatividade à esquerda dos símbolos ~¬~, ~∧~ e ~∨~ exclusivamente dentro do /namespace/ ~TruthValue~, evitando colisões com os conectivos lógicos nativos de ~Prop~.
+
+#+begin_src lean4
+-- Notação Mixfix restrita ao namespace TruthValue
+scoped prefix:75 "¬ " => neg
+scoped infixl:35 " ∧ " => land
+scoped infixl:30 " ∨ " => lor
+#+end_src
+
+* Axiomas, Provas Formais e Construção de Provas no Lean
+No Maude, os atributos ~[assoc comm]~ são assumidos pelo motor de reescrita. No Lean 4, nenhuma propriedade algébrica é assumida gratuitamente: precisamos construir um termo de prova para cada igualdade.
+
+** Metodologia de Geração de Provas no Lean 4
+Para provar identidades sobre tipos indutivos finitos como ~TruthValue~, o modo de táticas (~by~) do Lean opera transformando o estado da meta (/goal state/) em três etapas:
+
+1. *Decomposição Indutiva (~cases~):* Como ~TruthValue~ possui apenas os construtores ~t~ e ~f~, a tática ~cases p~ aplica o eliminador indutivo ~TruthValue.casesOn~, dividindo a meta atual $\Gamma \vdash P(p)$ em duas submetas independentes: $\Gamma \vdash P(\mathsf{t})$ e $\Gamma \vdash P(\mathsf{f})$.
+2. *Encadeamento de Táticas (~<;>~):* O combinador ~t₁ <;> t₂~ executa ~t₁~ e aplica ~t₂~ uniformemente a *todas* as submetas resultantes. Por exemplo, ~cases p <;> cases q~ gera as $2^2 = 4$ folhas da árvore de decisão sem repetição manual.
+3. *Normalização e Reflexividade (~rfl~):* Uma vez que todas as variáveis foram substituídas por construtores concretos (~t~ ou ~f~), ambos os lados da igualdade reduzem-se computacionalmente ($\delta\beta\iota$-redução) pelas equações de ~def~ até a mesma forma normal. A tática ~rfl~ constrói o termo ~Eq.refl~ atestando a identidade definicional.
+
+---
+
+** 1. Comutatividade e Associatividade da Conjunção ($\land$)
+
+*** Prova Matemática (LaTeX)
+*Proposição 1.1 (Comutatividade de $\land$).* Para quaisquer $p, q \in \mathsf{TruthValue}$, tem-se $p \land q = q \land p$.
+
+/Demonstração./ Procedemos por análise exaustiva sobre os construtores de $p$ e $q$, aplicando as equações definicionais $E_1: \mathsf{t} \land x = x$ e $E_2: \mathsf{f} \land x = \mathsf{f}$:
+- *Caso $p = \mathsf{t}, q = \mathsf{t}$:* $\mathsf{t} \land \mathsf{t} \stackrel{E_1}{=} \mathsf{t} \stackrel{E_1}{=} \mathsf{t} \land \mathsf{t}$.
+- *Caso $p = \mathsf{t}, q = \mathsf{f}$:* $\mathsf{t} \land \mathsf{f} \stackrel{E_1}{=} \mathsf{f} \stackrel{E_2}{=} \mathsf{f} \land \mathsf{t}$.
+- *Caso $p = \mathsf{f}, q = \mathsf{t}$:* $\mathsf{f} \land \mathsf{t} \stackrel{E_2}{=} \mathsf{f} \stackrel{E_1}{=} \mathsf{t} \land \mathsf{f}$.
+- *Caso $p = \mathsf{f}, q = \mathsf{f}$:* $\mathsf{f} \land \mathsf{f} \stackrel{E_2}{=} \mathsf{f} \stackrel{E_2}{=} \mathsf{f} \land \mathsf{f}$. $\blacksquare$
+
+*Proposição 1.2 (Associatividade de $\land$).* Para quaisquer $p, q, r \in \mathsf{TruthValue}$, tem-se $(p \land q) \land r = p \land (q \land r)$.
+
+/Demonstração./ Analisamos os dois casos para o primeiro operando $p$:
+- *Caso $p = \mathsf{t}$:*
+  $$(\mathsf{t} \land q) \land r \stackrel{E_1}{=} q \land r \stackrel{E_1}{=} \mathsf{t} \land (q \land r).$$
+- *Caso $p = \mathsf{f}$:*
+  $$(\mathsf{f} \land q) \land r \stackrel{E_2}{=} \mathsf{f} \land r \stackrel{E_2}{=} \mathsf{f} \stackrel{E_2}{=} \mathsf{f} \land (q \land r). \quad \blacksquare$$
+
+*** Implementação e Passo a Passo em Lean 4
+Note que, na associatividade de $\land$, como as equações definicionais fazem casamento de padrões no *primeiro* argumento, basta abrir casos apenas sobre ~p~ (embora ~cases p <;> cases q <;> cases r~ também feche todas as 8 folhas):
+
+#+begin_src lean4
+theorem land_comm (p q : TruthValue) : (p ∧ q) = (q ∧ p) := by
+  -- Meta inicial: ⊢ (p ∧ q) = (q ∧ p)
+  cases p
+  -- Submeta 1 (p = t): ⊢ (t ∧ q) = (q ∧ t)
+  -- Submeta 2 (p = f): ⊢ (f ∧ q) = (q ∧ f)
+  <;> cases q
+  -- Gera 4 submetas concretas (t/t, t/f, f/t, f/f), todas redutíveis por definição:
+  <;> rfl
+
+theorem land_assoc (p q r : TruthValue) : ((p ∧ q) ∧ r) = (p ∧ (q ∧ r)) := by
+  -- Como land é definida por pattern matching no 1º argumento,
+  -- basta analisar os 2 casos de p:
+  cases p <;> rfl
+#+end_src
+
+---
+
+** 2. Comutatividade e Associatividade da Disjunção ($\lor$)
+
+*** Prova Matemática (LaTeX)
+*Proposição 2.1 (Comutatividade de $\lor$).* Para quaisquer $p, q \in \mathsf{TruthValue}$, tem-se $p \lor q = q \lor p$.
+
+/Demonstração./ Pelas equações definicionais $E_3: \mathsf{t} \lor x = \mathsf{t}$ e $E_4: \mathsf{f} \lor x = x$:
+- *Caso $p = \mathsf{t}, q = \mathsf{t}$:* $\mathsf{t} \lor \mathsf{t} \stackrel{E_3}{=} \mathsf{t} \stackrel{E_3}{=} \mathsf{t} \lor \mathsf{t}$.
+- *Caso $p = \mathsf{t}, q = \mathsf{f}$:* $\mathsf{t} \lor \mathsf{f} \stackrel{E_3}{=} \mathsf{t} \stackrel{E_4}{=} \mathsf{f} \lor \mathsf{t}$.
+- *Caso $p = \mathsf{f}, q = \mathsf{t}$:* $\mathsf{f} \lor \mathsf{t} \stackrel{E_4}{=} \mathsf{t} \stackrel{E_3}{=} \mathsf{t} \lor \mathsf{f}$.
+- *Caso $p = \mathsf{f}, q = \mathsf{f}$:* $\mathsf{f} \lor \mathsf{f} \stackrel{E_4}{=} \mathsf{f} \stackrel{E_4}{=} \mathsf{f} \lor \mathsf{f}$. $\blacksquare$
+
+*Proposição 2.2 (Associatividade de $\lor$).* Para quaisquer $p, q, r \in \mathsf{TruthValue}$, tem-se $(p \lor q) \lor r = p \lor (q \lor r)$.
+
+/Demonstração./ Analisamos os dois construtores de $p$:
+- *Caso $p = \mathsf{t}$:*
+  $$(\mathsf{t} \lor q) \lor r \stackrel{E_3}{=} \mathsf{t} \lor r \stackrel{E_3}{=} \mathsf{t} \stackrel{E_3}{=} \mathsf{t} \lor (q \lor r).$$
+- *Caso $p = \mathsf{f}$:*
+  $$(\mathsf{f} \lor q) \lor r \stackrel{E_4}{=} q \lor r \stackrel{E_4}{=} \mathsf{f} \lor (q \lor r). \quad \blacksquare$$
+
+*** Implementação em Lean 4
+#+begin_src lean4
+theorem lor_comm (p q : TruthValue) : (p ∨ q) = (q ∨ p) := by
+  cases p <;> cases q <;> rfl
+
+theorem lor_assoc (p q r : TruthValue) : ((p ∨ q) ∨ r) = (p ∨ (q ∨ r)) := by
+  cases p <;> rfl
+#+end_src
+
+---
+
+** 3. Leis de Identidade, Anulação e Dupla Negação
+
+*** Prova Matemática (LaTeX)
+*Proposição 3.1 (Involução / Dupla Negação).* Para todo $p \in \mathsf{TruthValue}$, $\neg(\neg p) = p$.
+
+/Demonstração./ Pelas equações $E_5: \neg \mathsf{t} = \mathsf{f}$ e $E_6: \neg \mathsf{f} = \mathsf{t}$:
+- *Caso $p = \mathsf{t}$:* $\neg(\neg \mathsf{t}) \stackrel{E_5}{=} \neg \mathsf{f} \stackrel{E_6}{=} \mathsf{t}$.
+- *Caso $p = \mathsf{f}$:* $\neg(\neg \mathsf{f}) \stackrel{E_6}{=} \neg \mathsf{t} \stackrel{E_5}{=} \mathsf{f}$. $\blacksquare$
+
+*Proposição 3.2 (Elementos Neutros à Direita).* Para todo $p \in \mathsf{TruthValue}$, $p \land \mathsf{t} = p$ e $p \lor \mathsf{f} = p$.
+
+/Demonstração./ Como a definição original fixou a identidade à esquerda ($\mathsf{t} \land p = p$ e $\mathsf{f} \lor p = p$), a identidade à direita decorre diretamente da comutatividade (Proposições 1.1 e 2.1):
+$$p \land \mathsf{t} \stackrel{\text{Prop. 1.1}}{=} \mathsf{t} \land p \stackrel{E_1}{=} p, \qquad p \lor \mathsf{f} \stackrel{\text{Prop. 2.1}}{=} \mathsf{f} \lor p \stackrel{E_4}{=} p. \quad \blacksquare$$
+
+*** Implementação em Lean 4 (Demonstração via Reescrita ~rw~ vs. Casos)
+Aqui ilustramos duas estratégias no Lean: redução direta por casos (~neg_neg~) e prova equacional reutilizando lemas anteriores com a tática de reescrita ~rw~ (~land_true~ e ~lor_false~):
+
+#+begin_src lean4
+theorem neg_neg (p : TruthValue) : ¬ (¬ p) = p := by
+  cases p <;> rfl
+
+theorem land_true (p : TruthValue) : (p ∧ t) = p := by
+  -- Reescreve (p ∧ t) usando a comutatividade para obter (t ∧ p),
+  -- que reduz definicionalmente para p por rfl:
+  rw [land_comm]
+  rfl
+
+theorem lor_false (p : TruthValue) : (p ∨ f) = p := by
+  rw [lor_comm]
+  rfl
+#+end_src
+
+---
+
+** 4. Leis de De Morgan e Distributividade
+
+*** Prova Matemática (LaTeX)
+*Proposição 4.1 (Leis de De Morgan).* Para quaisquer $p, q \in \mathsf{TruthValue}$:
+1. $\neg(p \land q) = (\neg p) \lor (\neg q)$
+2. $\neg(p \lor q) = (\neg p) \land (\neg q)$
+
+/Demonstração./
+1. Analisamos os casos sobre $p$:
+   - *Caso $p = \mathsf{t}$:* $\neg(\mathsf{t} \land q) = \neg q$, enquanto $(\neg \mathsf{t}) \lor (\neg q) = \mathsf{f} \lor (\neg q) = \neg q$.
+   - *Caso $p = \mathsf{f}$:* $\neg(\mathsf{f} \land q) = \neg \mathsf{f} = \mathsf{t}$, enquanto $(\neg \mathsf{f}) \lor (\neg q) = \mathsf{t} \lor (\neg q) = \mathsf{t}$.
+2. De modo dual, analisamos os casos sobre $p$:
+   - *Caso $p = \mathsf{t}$:* $\neg(\mathsf{t} \lor q) = \neg \mathsf{t} = \mathsf{f}$, enquanto $(\neg \mathsf{t}) \land (\neg q) = \mathsf{f} \land (\neg q) = \mathsf{f}$.
+   - *Caso $p = \mathsf{f}$:* $\neg(\mathsf{f} \lor q) = \neg q$, enquanto $(\neg \mathsf{f}) \land (\neg q) = \mathsf{t} \land (\neg q) = \neg q$. $\blacksquare$
+
+*Proposição 4.2 (Distributividade de $\land$ sobre $\lor$).* Para quaisquer $p, q, r \in \mathsf{TruthValue}$,
+$$p \land (q \lor r) = (p \land q) \lor (p \land r).$$
+
+/Demonstração./ Analisamos os dois construtores de $p$:
+- *Caso $p = \mathsf{t}$:*
+  $$\mathsf{t} \land (q \lor r) = q \lor r = (\mathsf{t} \land q) \lor (\mathsf{t} \land r).$$
+- *Caso $p = \mathsf{f}$:*
+  $$\mathsf{f} \land (q \lor r) = \mathsf{f} = \mathsf{f} \lor \mathsf{f} = (\mathsf{f} \land q) \lor (\mathsf{f} \land r). \quad \blacksquare$$
+
+*** Implementação em Lean 4
+Como nas provas em LaTeX acima todas as reduções dependem apenas do construtor de ~p~, basta executar ~cases p <;> rfl~ para fechar as três propriedades:
+
+#+begin_src lean4
+theorem de_morgan_land (p q : TruthValue) : ¬ (p ∧ q) = (¬ p ∨ ¬ q) := by
+  cases p <;> rfl
+
+theorem de_morgan_lor (p q : TruthValue) : ¬ (p ∨ q) = (¬ p ∧ ¬ q) := by
+  cases p <;> rfl
+
+theorem land_lor_distrib (p q r : TruthValue) : (p ∧ (q ∨ r)) = ((p ∧ q) ∨ (p ∧ r)) := by
+  cases p <;> rfl
+
+end TruthValue
+#+end_src
+
+* Verificação e Execução
+Para extrair o código-fonte e verificar todas as provas no compilador do Lean 4 a partir do Emacs:
+1. Execute ~M-x org-babel-tangle~ (~C-c C-v t~) para gerar o arquivo ~TruthValues.lean~.
+2. No terminal, execute ~lean TruthValues.lean~ (ou ~lake env lean TruthValues.lean~ dentro do workspace). A saída vazia com código de retorno ~0~ atesta que todos os termos de prova foram verificados pelo núcleo do Lean.

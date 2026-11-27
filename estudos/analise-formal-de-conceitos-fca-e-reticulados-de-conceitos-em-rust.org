@@ -1,0 +1,481 @@
+:PROPERTIES:
+:ID:       rust-imple--fca
+:END:
+#+TITLE: Análise Formal de Conceitos (FCA) e Reticulados de Conceitos em Rust
+#+DATE: [2026-11-26 qui]
+#+DESCRIPTION: Contextos formais, conexões de Galois antítonas, Teorema Fundamental dos Reticulados de Conceitos e implicações de atributos
+#+STATUS: semente
+#+NOTE_TYPE: estudo
+#+FILETAGS: :rust:implementation:publish:estudo:
+#+PROPERTY: header-args:rust :tangle src/fca.rs :mkdirp yes
+
+* Implementação
+
+A *Análise Formal de Conceitos* (/Formal Concept Analysis/ — FCA, desenvolvida por Rudolf Wille e Bernhard Ganter) unifica quase todas as estruturas desenvolvidas nos estudos anteriores: *conexões de Galois*, *operadores de fecho*, *reticulados completos* e *diagramas de Hasse*. Seu objetivo é extrair hierarquias conceituais exatas e regras de implicação lógica a partir de tabelas de incidência entre objetos e atributos.
+
+** Importações
+#+begin_src rust
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::fmt;
+use std::hash::Hash;
+
+use crate::hasse::HasseDiagram;
+use crate::lattices::CompleteLatticeSet;
+use crate::morphisms::{GaloisConnection, MonotoneMap};
+use crate::{PreorderSet, Relation};
+#+end_src
+
+** Contexto Formal e Operadores de Derivação
+Um *contexto formal* é uma tripla \( \mathbb{K} = (G, M, I) \), em que:
+- \( G \) é um conjunto finito de *objetos* (/Gegenstände/);
+- \( M \) é um conjunto finito de *atributos* (/Merkmale/);
+- \( I \subseteq G \times M \) é uma *relação de incidência*, onde \( (g, m) \in I \) lê-se *"o objeto \( g \) possui o atributo \( m \)"*.
+
+A partir de \( I \), definem-se dois *operadores de derivação* \( (-)' \):
+
+1. *Intensão comum de um conjunto de objetos \( A \subseteq G \):*
+   $$A' = \{ m \in M \mid \forall g \in A,\ (g, m) \in I \}$$
+2. *Extensão comum de um conjunto de atributos \( B \subseteq M \):*
+   $$B' = \{ g \in G \mid \forall m \in B,\ (g, m) \in I \}$$
+
+Por vacuidade lógica, \( \emptyset' = M \) e \( \emptyset' = G \). Esses dois operadores satisfazem a *conexão de Galois antítona*:
+
+$$\forall A \subseteq G,\ \forall B \subseteq M,\quad B \subseteq A' \iff A \subseteq B'$$
+
+Equivalentemente, invertendo a ordem do contradomínio para \( Q = (\mathcal{P}(M), \supseteq) = \mathcal{P}(M)^{\text{op}} \), o par \( (A \mapsto A',\ B \mapsto B') \) forma uma **conexão de Galois monótona** \( (-)' \dashv (-)' \) entre \( (\mathcal{P}(G), \subseteq) \) e \( (\mathcal{P}(M), \supseteq) \). Consequentemente, as composições \( A \mapsto A'' \) e \( B \mapsto B'' \) são *operadores de fecho* sobre objetos e atributos, respectivamente.
+
+#+begin_src rust
+fn powerset_preorder<T: Ord + Hash + Clone>(elements: &BTreeSet<T>) -> PreorderSet<BTreeSet<T>> {
+    let items: Vec<T> = elements.iter().cloned().collect();
+    let total = 1_usize << items.len();
+    let mut subsets = Vec::with_capacity(total);
+
+    for mask in 0..total {
+        let mut set = BTreeSet::new();
+        for (i, item) in items.iter().enumerate() {
+            if (mask & (1 << i)) != 0 {
+                set.insert(item.clone());
+            }
+        }
+        subsets.push(set);
+    }
+
+    let mut relation = Relation::new();
+    for s in &subsets {
+        relation.insert_element(s.clone());
+    }
+    for s1 in &subsets {
+        for s2 in &subsets {
+            if s1.is_subset(s2) {
+                relation
+                    .relate(s1.clone(), s2.clone())
+                    .expect("subconjuntos pertencem ao domínio");
+            }
+        }
+    }
+
+    PreorderSet::try_from(relation)
+        .expect("o conjunto das partes ordenado por inclusão é sempre uma pré-ordem")
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FormalContext<G: Ord + Hash, M: Ord + Hash> {
+    pub objects: BTreeSet<G>,
+    pub attributes: BTreeSet<M>,
+    pub incidence: HashSet<(G, M)>,
+}
+
+impl<G: Ord + Hash + Clone, M: Ord + Hash + Clone> Default for FormalContext<G, M> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<G: Ord + Hash + Clone, M: Ord + Hash + Clone> FormalContext<G, M> {
+    pub fn new() -> Self {
+        Self {
+            objects: BTreeSet::new(),
+            attributes: BTreeSet::new(),
+            incidence: HashSet::new(),
+        }
+    }
+
+    pub fn insert_object(&mut self, obj: G) -> bool {
+        self.objects.insert(obj)
+    }
+
+    pub fn insert_attribute(&mut self, attr: M) -> bool {
+        self.attributes.insert(attr)
+    }
+
+    pub fn relate(&mut self, obj: G, attr: M) -> bool {
+        self.objects.insert(obj.clone());
+        self.attributes.insert(attr.clone());
+        self.incidence.insert((obj, attr))
+    }
+
+    pub fn has_attribute(&self, obj: &G, attr: &M) -> bool {
+        self.incidence.contains(&(obj.clone(), attr.clone()))
+    }
+
+    pub fn intent(&self, objects: &BTreeSet<G>) -> BTreeSet<M> {
+        self.attributes
+            .iter()
+            .filter(|m| {
+                objects
+                    .iter()
+                    .all(|g| self.incidence.contains(&(g.clone(), (*m).clone())))
+            })
+            .cloned()
+            .collect()
+    }
+
+    pub fn extent(&self, attributes: &BTreeSet<M>) -> BTreeSet<G> {
+        self.objects
+            .iter()
+            .filter(|g| {
+                attributes
+                    .iter()
+                    .all(|m| self.incidence.contains(&((*g).clone(), m.clone())))
+            })
+            .cloned()
+            .collect()
+    }
+
+    pub fn object_closure(&self, objects: &BTreeSet<G>) -> BTreeSet<G> {
+        let int = self.intent(objects);
+        self.extent(&int)
+    }
+
+    pub fn attribute_closure(&self, attributes: &BTreeSet<M>) -> BTreeSet<M> {
+        let ext = self.extent(attributes);
+        self.intent(&ext)
+    }
+
+    pub fn galois_connection(&self) -> GaloisConnection<BTreeSet<G>, BTreeSet<M>> {
+        let pow_g = powerset_preorder(&self.objects);
+        let pow_m_op = powerset_preorder(&self.attributes).dual();
+
+        let mut intent_map = HashMap::with_capacity(pow_g.relation().domain.len());
+        for a in &pow_g.relation().domain {
+            intent_map.insert(a.clone(), self.intent(a));
+        }
+
+        let mut extent_map = HashMap::with_capacity(pow_m_op.relation().domain.len());
+        for b in &pow_m_op.relation().domain {
+            extent_map.insert(b.clone(), self.extent(b));
+        }
+
+        let left = MonotoneMap::new(pow_g.clone(), pow_m_op.clone(), intent_map)
+            .expect("intent: P(G) -> P(M)^op é sempre monótono");
+        let right = MonotoneMap::new(pow_m_op, pow_g, extent_map)
+            .expect("extent: P(M)^op -> P(G) é sempre monótono");
+
+        GaloisConnection::new(left, right)
+            .expect("operadores de derivação formam sempre uma conexão de Galois")
+    }
+}
+#+end_src
+
+** Conceitos Formais e Teorema Fundamental da FCA
+Um *conceito formal* de \( \mathbb{K} = (G, M, I) \) é um par maximal \( (A, B) \in \mathcal{P}(G) \times \mathcal{P}(M) \) tal que:
+
+$$A' = B \qquad\text{e}\qquad B' = A$$
+
+Denomina-se \( A \) a *extensão* (/extent/) e \( B \) a *intensão* (/intent/) do conceito. Pela conexão de Galois, os conjuntos \( A \) que são extensões de algum conceito são exatamente os pontos fixos do operador de fecho \( A'' = A \) (~closed_elements~ da adjunção).
+
+Ordenando dois conceitos \( (A_1, B_1) \) e \( (A_2, B_2) \) pela relação de *subconceito–superconceito*:
+
+$$(A_1, B_1) \le (A_2, B_2) \iff A_1 \subseteq A_2 \iff B_2 \subseteq B_1$$
+
+o *Teorema Fundamental dos Reticulados de Conceitos* (Ganter & Wille) estabelece que o conjunto \( \underline{\mathfrak{B}}(G, M, I) \) de todos os conceitos formais é um **reticulado completo** (~CompleteLatticeSet<FormalConcept<G, M>>~), no qual o ínfimo e o supremo de qualquer família \( \{ (A_i, B_i) \}_{i \in J} \) são dados por:
+
+$$\bigwedge_{i \in J} (A_i, B_i) = \left( \bigcap_{i \in J} A_i,\ \left(\bigcup_{i \in J} B_i\right)'' \right) \qquad\text{e}\qquad \bigvee_{i \in J} (A_i, B_i) = \left( \left(\bigcup_{i \in J} A_i\right)'',\ \bigcap_{i \in J} B_i \right)$$
+
+#+begin_src rust
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FormalConcept<G: Ord, M: Ord> {
+    pub extent: BTreeSet<G>,
+    pub intent: BTreeSet<M>,
+}
+
+impl<G: Ord + Hash + Clone, M: Ord + Hash + Clone> FormalContext<G, M> {
+    pub fn concepts(&self) -> Vec<FormalConcept<G, M>> {
+        let connection = self.galois_connection();
+        let mut list: Vec<FormalConcept<G, M>> = connection
+            .closed_elements()
+            .into_iter()
+            .map(|extent| {
+                let intent = self.intent(&extent);
+                FormalConcept { extent, intent }
+            })
+            .collect();
+
+        list.sort();
+        list
+    }
+
+    pub fn object_concept(&self, obj: &G) -> FormalConcept<G, M> {
+        let singleton = BTreeSet::from([obj.clone()]);
+        let extent = self.object_closure(&singleton);
+        let intent = self.intent(&extent);
+        FormalConcept { extent, intent }
+    }
+
+    pub fn attribute_concept(&self, attr: &M) -> FormalConcept<G, M> {
+        let singleton = BTreeSet::from([attr.clone()]);
+        let intent = self.attribute_closure(&singleton);
+        let extent = self.extent(&intent);
+        FormalConcept { extent, intent }
+    }
+
+    pub fn concept_lattice(&self) -> CompleteLatticeSet<FormalConcept<G, M>> {
+        let concepts = self.concepts();
+        let mut relation = Relation::new();
+
+        for c in &concepts {
+            relation.insert_element(c.clone());
+        }
+        for c1 in &concepts {
+            for c2 in &concepts {
+                if c1.extent.is_subset(&c2.extent) {
+                    relation
+                        .relate(c1.clone(), c2.clone())
+                        .expect("conceitos pertencem ao domínio");
+                }
+            }
+        }
+
+        CompleteLatticeSet::try_from(relation)
+            .expect("pelo Teorema Fundamental da FCA, B(G, M, I) é sempre um reticulado completo")
+    }
+
+    pub fn concept_hasse_diagram(&self) -> HasseDiagram<FormalConcept<G, M>> {
+        self.concept_lattice().poset().hasse_diagram()
+    }
+}
+#+end_src
+
+** Implicações de Atributos e Axiomas de Armstrong
+Uma *implicação de atributos* sobre \( M \) é uma expressão \( X \to Y \) com \( X, Y \subseteq M \). Dizemos que \( X \to Y \) é *válida no contexto* \( \mathbb{K} \) (\( \mathbb{K} \models X \to Y \)) se todo objeto que possui todos os atributos de \( X \) também possui todos os atributos de \( Y \):
+
+$$\mathbb{K} \models (X \to Y) \iff X' \subseteq Y' \iff Y \subseteq X''$$
+
+Assim, o operador de fecho \( X \mapsto X'' \) caracteriza integralmente todas as implicações válidas em \( \mathbb{K} \). Além disso, dado um conjunto base de implicações \( \Sigma \), o fecho sintático \( X^{\Sigma} \) (obtido pela aplicação iterada das regras de inferência de *Armstrong*: reflexividade, aumentatividade e transitividade) é *correto* e *completo* em relação à semântica do contexto.
+
+#+begin_src rust
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct AttributeImplication<M: Ord> {
+    pub premise: BTreeSet<M>,
+    pub conclusion: BTreeSet<M>,
+}
+
+impl<M: Ord + Clone> AttributeImplication<M> {
+    pub fn new(premise: BTreeSet<M>, conclusion: BTreeSet<M>) -> Self {
+        Self {
+            premise,
+            conclusion,
+        }
+    }
+
+    pub fn is_trivial(&self) -> bool {
+        self.conclusion.is_subset(&self.premise)
+    }
+
+    pub fn infer_closure(implications: &[Self], seed: &BTreeSet<M>) -> BTreeSet<M> {
+        let mut closure = seed.clone();
+        loop {
+            let mut changed = false;
+            for imp in implications {
+                if imp.premise.is_subset(&closure) {
+                    for attr in &imp.conclusion {
+                        if closure.insert(attr.clone()) {
+                            changed = true;
+                        }
+                    }
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        closure
+    }
+}
+
+impl<G: Ord + Hash + Clone, M: Ord + Hash + Clone> FormalContext<G, M> {
+    pub fn holds_implication(&self, imp: &AttributeImplication<M>) -> bool {
+        let closed_premise = self.attribute_closure(&imp.premise);
+        imp.conclusion.is_subset(&closed_premise)
+    }
+
+    pub fn valid_implications(&self) -> Vec<AttributeImplication<M>> {
+        let pow_m = powerset_preorder(&self.attributes);
+        let mut result = Vec::new();
+
+        for premise in &pow_m.relation().domain {
+            let closure = self.attribute_closure(premise);
+            let conclusion: BTreeSet<M> = closure.difference(premise).cloned().collect();
+            if !conclusion.is_empty() {
+                result.push(AttributeImplication::new(premise.clone(), conclusion));
+            }
+        }
+
+        result.sort();
+        result
+    }
+}
+#+end_src
+
+** Representações
+*** =Display=
+#+begin_src rust
+fn format_set<T: fmt::Display>(set: &BTreeSet<T>) -> String {
+    let items: Vec<String> = set.iter().map(|x| x.to_string()).collect();
+    format!("{{{}}}", items.join(", "))
+}
+
+impl<G: Ord + fmt::Display, M: Ord + fmt::Display> fmt::Display for FormalConcept<G, M> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "({}, {})",
+            format_set(&self.extent),
+            format_set(&self.intent)
+        )
+    }
+}
+
+impl<M: Ord + fmt::Display> fmt::Display for AttributeImplication<M> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} -> {}",
+            format_set(&self.premise),
+            format_set(&self.conclusion)
+        )
+    }
+}
+
+impl<G: Ord + Hash + fmt::Display, M: Ord + Hash + fmt::Display> fmt::Display
+    for FormalContext<G, M>
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(
+            f,
+            "FormalContext (|G| = {}, |M| = {}, |I| = {}):",
+            self.objects.len(),
+            self.attributes.len(),
+            self.incidence.len()
+        )?;
+        for obj in &self.objects {
+            let attrs: BTreeSet<&M> = self
+                .attributes
+                .iter()
+                .filter(|m| self.incidence.contains(&(obj.clone(), (*m).clone())))
+                .collect();
+            writeln!(f, "  {}: {}", obj, format_set(&attrs))?;
+        }
+        Ok(())
+    }
+}
+#+end_src
+
+** Suíte de Verificação (=cargo test=)
+Como estudo de caso clássico da literatura de FCA, modelamos um contexto de **figuras geométricas planas** \( G = \{\text{Triângulo}, \text{Retângulo}, \text{Losango}, \text{Quadrado}\} \) sobre os atributos \( M = \{\text{3 lados}, \text{4 lados}, \text{ângulos retos}, \text{lados iguais}\} \), verificando automaticamente a hierarquia conceitual (e.g., *Quadrado* como subconceito simultâneo de *Retângulo* e *Losango*) e implicações lógicas como \( \{\text{ângulos retos}, \text{lados iguais}\} \to \{\text{4 lados}\} \).
+
+#+begin_src rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn build_geometry_context() -> FormalContext<&'static str, &'static str> {
+        let mut ctx = FormalContext::new();
+
+        // Triângulo equilátero: 3 lados, lados iguais
+        ctx.relate("Triangulo", "3_lados");
+        ctx.relate("Triangulo", "lados_iguais");
+
+        // Retângulo: 4 lados, ângulos retos
+        ctx.relate("Retangulo", "4_lados");
+        ctx.relate("Retangulo", "angulos_retos");
+
+        // Losango: 4 lados, lados iguais
+        ctx.relate("Losango", "4_lados");
+        ctx.relate("Losango", "lados_iguais");
+
+        // Quadrado: 4 lados, ângulos retos, lados iguais
+        ctx.relate("Quadrado", "4_lados");
+        ctx.relate("Quadrado", "angulos_retos");
+        ctx.relate("Quadrado", "lados_iguais");
+
+        ctx
+    }
+
+    #[test]
+    fn test_fca_concept_lattice_and_galois_connection() {
+        let ctx = build_geometry_context();
+
+        // Verifica que os operadores intent e extent satisfazem a Conexão de Galois
+        let _adjunction = ctx.galois_connection();
+
+        let lattice = ctx.concept_lattice();
+        let hasse = ctx.concept_hasse_diagram();
+
+        // Conceito mínimo (bot): extensão vazia, intensão = todos os 4 atributos
+        assert_eq!(lattice.bottom().extent, BTreeSet::new());
+        assert_eq!(lattice.bottom().intent.len(), 4);
+
+        // Conceito máximo (top): extensão = todas as 4 figuras, intensão = vazia
+        assert_eq!(lattice.top().extent.len(), 4);
+        assert_eq!(lattice.top().intent, BTreeSet::new());
+
+        // Conceitos de Retângulo e Losango têm como ínfimo (meet) exatamente o conceito de Quadrado
+        let rect = ctx.attribute_concept(&"angulos_retos");
+        let rhomb = ctx.object_concept(&"Losango");
+        let square = ctx.object_concept(&"Quadrado");
+
+        assert_eq!(rect.extent, BTreeSet::from(["Quadrado", "Retangulo"]));
+        assert_eq!(rhomb.extent, BTreeSet::from(["Losango", "Quadrado"]));
+        assert_eq!(lattice.meet(&rect, &rhomb), Some(square.clone()));
+
+        // No Diagrama de Hasse, Quadrado é coberto diretamente por Retângulo e por Losango
+        assert!(hasse.cover_edges.contains(&(square.clone(), rect)));
+        assert!(hasse.cover_edges.contains(&(square, rhomb)));
+    }
+
+    #[test]
+    fn test_fca_attribute_implications_and_armstrong_closure() {
+        let ctx = build_geometry_context();
+
+        // Implicação válida: {angulos_retos} -> {4_lados}
+        let imp_rect_4sides = AttributeImplication::new(
+            BTreeSet::from(["angulos_retos"]),
+            BTreeSet::from(["4_lados"]),
+        );
+        assert!(ctx.holds_implication(&imp_rect_4sides));
+
+        // Implicação inválida: {lados_iguais} -> {4_lados} (contraexemplo: Triângulo)
+        let imp_eq_4sides = AttributeImplication::new(
+            BTreeSet::from(["lados_iguais"]),
+            BTreeSet::from(["4_lados"]),
+        );
+        assert!(!ctx.holds_implication(&imp_eq_4sides));
+
+        // Implicação válida conjunta: {3_lados} -> {lados_iguais}
+        let imp_3_eq = AttributeImplication::new(
+            BTreeSet::from(["3_lados"]),
+            BTreeSet::from(["lados_iguais"]),
+        );
+        assert!(ctx.holds_implication(&imp_3_eq));
+
+        // Fecho sintático de Armstrong a partir das implicações válidas do contexto
+        let valid = ctx.valid_implications();
+        let seed = BTreeSet::from(["angulos_retos"]);
+        let inferred = AttributeImplication::infer_closure(&valid, &seed);
+
+        assert_eq!(inferred, BTreeSet::from(["4_lados", "angulos_retos"]));
+        assert!(ctx.holds_implication(&AttributeImplication::new(seed, inferred)));
+    }
+}
+#+end_src
