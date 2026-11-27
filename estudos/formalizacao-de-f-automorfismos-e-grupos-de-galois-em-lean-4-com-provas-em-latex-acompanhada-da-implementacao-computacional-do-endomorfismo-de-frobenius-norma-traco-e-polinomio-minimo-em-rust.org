@@ -1,0 +1,362 @@
+:PROPERTIES:
+:ID:       a3d7e491-6f12-4b88-9c34-8e2a1f5b7d02
+:END:
+#+TITLE: Teoria de Galois Finita, Automorfismo de Frobenius, Norma e Traço (Lean 4 + Rust)
+#+DATE: [2026-11-27 sex]
+#+DESCRIPTION: Formalização de F-automorfismos e grupos de Galois em Lean 4 com provas em LaTeX, acompanhada da implementação computacional do endomorfismo de Frobenius, Norma, Traço e Polinômio Mínimo em Rust.
+#+STATUS: semente
+#+NOTE_TYPE: estudo
+#+FILETAGS: :computer-science/formal-specification:programming/lean:programming/rust:algebra:galois-theory:publish:estudo:
+
+* Visão Geral: Simetrias de Corpos e o Grupo de Galois (Lang, Cap. VI, §1–§6)
+No estudo anterior, construímos extensões algébricas simples $E = K[x]/(f(x))$ e corpos finitos $\mathbb{F}_{p^n}$. Agora entramos no núcleo do **Capítulo VI do Lang (Teoria de Galois)**: o estudo do grupo de automorfismos de uma extensão de corpos $E / F$.
+
+Dada uma extensão $E / F$, o **Grupo de Galois** $\text{Gal}(E/F)$ é o conjunto de todos os automorfismos de anel $\sigma : E \xrightarrow{\sim} E$ que fixam o subcorpo base $F$ pontualmente:
+$$\text{Gal}(E/F) = \big\{ \sigma \in \text{Aut}(E) \;\big|\; \forall c \in F,\; \sigma(c) = c \big\}.$$
+
+Para extensões finitas de corpos primos $E = \mathbb{F}_{p^n}$ sobre $F = \mathbb{F}_p$, o grupo $\text{Gal}(\mathbb{F}_{p^n} / \mathbb{F}_p)$ é cíclico de ordem $n$, gerado pelo **Automorfismo de Frobenius**:
+$$\Phi_p : \mathbb{F}_{p^n} \to \mathbb{F}_{p^n}, \qquad \Phi_p(\alpha) = \alpha^p.$$
+
+Neste estudo:
+1. **Formalizamos em Lean 4** a estrutura de $F$-homomorfismos e $F$-automorfismos de corpos (~FieldAlgAut~), provamos que $\text{Gal}(E/F)$ é fechado sob identidade, composição e inversão (formando um grupo) e que cada $\sigma \in \text{Gal}(E/F)$ permuta o conjunto das raízes de qualquer polinômio $g(x) \in F[x]$.
+2. **Implementamos em Rust** (`ch06-galois`) o gerador de Frobenius $\Phi_p$, a órbita de Galois $\{\alpha, \alpha^p, \alpha^{p^2}, \dots\}$, o cálculo exato de **Norma** $N_{E/F}(\alpha)$, **Traço** $\text{Tr}_{E/F}(\alpha)$ e o **Polinômio Mínimo** sobre $\mathbb{F}_p$.
+
+* Camada Formal em Lean 4 (~GaloisTheory.lean~)
+:PROPERTIES:
+:header-args:lean4: :tangle lean/StrangeAlgebras/GaloisTheory.lean :results silent
+:END:
+
+** Automorfismos de Corpos e $F$-Estabilidade (Grupo de Galois)
+Modelamos uma extensão de corpos $E / F$ através de um homomorfismo injetivo canônico $\iota : F \to E$ (a inclusão do corpo base no corpo extensão) e definimos $\text{Gal}(E/F)$ como o tipo dos automorfismos bijetivos $\sigma : E \to E$ compatíveis com $\iota$.
+
+#+begin_src lean4
+import BooleanRingDuality
+import Polynomials
+
+namespace StrangeAlgebras.Galois
+
+open StrangeAlgebras.BooleanDuality
+open StrangeAlgebras.Polynomials
+
+/-- Homomorfismo de anéis com unidade φ : R → S -/
+structure RingHom (R S : Type u) [CommRing R] [CommRing S] where
+  toFun    : R → S
+  map_zero : toFun CommRing.zero = CommRing.zero
+  map_one  : toFun CommRing.one = CommRing.one
+  map_add  : ∀ a b : R, toFun (CommRing.add a b) = CommRing.add (toFun a) (toFun b)
+  map_mul  : ∀ a b : R, toFun (CommRing.mul a b) = CommRing.mul (toFun a) (toFun b)
+
+/-- Capítulo VI, §1 (Lang): Grupo de Galois Gal(E/F) dado um mergulho ι : F → E.
+    Contém os automorfismos σ : E ≃ E tais que σ(ι(c)) = ι(c) para todo c ∈ F. -/
+structure GaloisAut {F E : Type u} [Field F] [Field E] (ι : RingHom F E) extends RingHom E E where
+  invFun     : E → E
+  left_inv   : ∀ x : E, invFun (toFun x) = x
+  right_inv  : ∀ x : E, toFun (invFun x) = x
+  fixes_base : ∀ c : F, toFun (ι.toFun c) = ι.toFun c
+#+end_src
+
+** Teorema 1: Estrutura de Grupo de $\text{Gal}(E/F)$
+
+*** Prova Matemática (LaTeX)
+*Teorema 1.1 (Grupo de Galois).* Seja $\iota : F \hookrightarrow E$ uma extensão de corpos. O conjunto $\text{Gal}(E/F)$ munido da composição de funções $(\sigma \circ \tau)(x) = \sigma(\tau(x))$, da identidade $\text{id}_E$ e da inversa funcional $\sigma^{-1}$ forma um grupo.
+
+/Demonstração./
+1. *Identidade:* Claramente $\text{id}_E$ é um homomorfismo bijetivo e $\text{id}_E(\iota(c)) = \iota(c)$ para todo $c \in F$.
+2. *Fechamento sob Composição:* Se $\sigma, \tau \in \text{Gal}(E/F)$, então $(\sigma \circ \tau)$ é homomorfismo bijetivo e, para todo $c \in F$:
+   $$(\sigma \circ \tau)(\iota(c)) = \sigma(\tau(\iota(c))) = \sigma(\iota(c)) = \iota(c).$$
+3. *Fechamento sob Inversão:* Se $\sigma \in \text{Gal}(E/F)$ e $c \in F$, aplicando $\sigma^{-1}$ à igualdade $\sigma(\iota(c)) = \iota(c)$ obtemos:
+   $$\sigma^{-1}(\iota(c)) = \sigma^{-1}(\sigma(\iota(c))) = \iota(c).$$
+   Além disso, $\sigma^{-1}$ preserva soma e produto: por exemplo, $\sigma(\sigma^{-1}(x) + \sigma^{-1}(y)) = \sigma(\sigma^{-1}(x)) + \sigma(\sigma^{-1}(y)) = x + y$, logo aplicando $\sigma^{-1}$ segue $\sigma^{-1}(x + y) = \sigma^{-1}(x) + \sigma^{-1}(y)$. $\blacksquare$
+
+*** Implementação e Provas em Lean 4
+#+begin_src lean4
+section GaloisGroupStructure
+variable {F E : Type u} [Field F] [Field E] (ι : RingHom F E)
+
+/-- Elemento neutro: automorfismo identidade id_E ∈ Gal(E/F) -/
+def galId : GaloisAut ι where
+  toFun      := id
+  invFun     := id
+  map_zero   := rfl
+  map_one    := rfl
+  map_add    := fun _ _ => rfl
+  map_mul    := fun _ _ => rfl
+  left_inv   := fun _ => rfl
+  right_inv  := fun _ => rfl
+  fixes_base := fun _ => rfl
+
+/-- Composição de dois elementos σ, τ ∈ Gal(E/F) -/
+def galComp (σ τ : GaloisAut ι) : GaloisAut ι where
+  toFun      := fun x => σ.toFun (τ.toFun x)
+  invFun     := fun x => τ.invFun (σ.invFun x)
+  map_zero   := by rw [τ.map_zero, σ.map_zero]
+  map_one    := by rw [τ.map_one, σ.map_one]
+  map_add    := fun a b => by rw [τ.map_add, σ.map_add]
+  map_mul    := fun a b => by rw [τ.map_mul, σ.map_mul]
+  left_inv   := fun x => by dsimp; rw [σ.left_inv, τ.left_inv]
+  right_inv  := fun x => by dsimp; rw [τ.right_inv, σ.right_inv]
+  fixes_base := fun c => by dsimp; rw [τ.fixes_base, σ.fixes_base]
+
+/-- Inverso de σ ∈ Gal(E/F) (provando preservação de soma, produto e base) -/
+def galInv (σ : GaloisAut ι) : GaloisAut ι where
+  toFun      := σ.invFun
+  invFun     := σ.toFun
+  map_zero   := by
+    calc σ.invFun CommRing.zero
+      _ = σ.invFun (σ.toFun CommRing.zero) := by rw [σ.map_zero]
+      _ = CommRing.zero                    := σ.left_inv CommRing.zero
+  map_one    := by
+    calc σ.invFun CommRing.one
+      _ = σ.invFun (σ.toFun CommRing.one) := by rw [σ.map_one]
+      _ = CommRing.one                    := σ.left_inv CommRing.one
+  map_add    := fun a b => by
+    have h : σ.toFun (CommRing.add (σ.invFun a) (σ.invFun b)) = CommRing.add a b := by
+      rw [σ.map_add, σ.right_inv, σ.right_inv]
+    calc σ.invFun (CommRing.add a b)
+      _ = σ.invFun (σ.toFun (CommRing.add (σ.invFun a) (σ.invFun b))) := by rw [h]
+      _ = CommRing.add (σ.invFun a) (σ.invFun b)                        := σ.left_inv _
+  map_mul    := fun a b => by
+    have h : σ.toFun (CommRing.mul (σ.invFun a) (σ.invFun b)) = CommRing.mul a b := by
+      rw [σ.map_mul, σ.right_inv, σ.right_inv]
+    calc σ.invFun (CommRing.mul a b)
+      _ = σ.invFun (σ.toFun (CommRing.mul (σ.invFun a) (σ.invFun b))) := by rw [h]
+      _ = CommRing.mul (σ.invFun a) (σ.invFun b)                        := σ.left_inv _
+  left_inv   := σ.right_inv
+  right_inv  := σ.left_inv
+  fixes_base := fun c => by
+    calc σ.invFun (ι.toFun c)
+      _ = σ.invFun (σ.toFun (ι.toFun c)) := by rw [σ.fixes_base]
+      _ = ι.toFun c                      := σ.left_inv _
+
+end GaloisGroupStructure
+#+end_src
+
+** Teorema 2: Ação de $\text{Gal}(E/F)$ sobre Raízes de Polinômios em $F[x]$
+
+*** Prova Matemática (LaTeX)
+*Teorema 2.1 (Permutação de Raízes).* Seja $g(x) = \sum_{i=0}^{d} c_i x^i \in F[x]$ um polinômio com coeficientes no corpo base $F$, e seja $\alpha \in E$ uma raiz de $g$ (isto é, $g(\alpha) = 0$). Então, para todo $\sigma \in \text{Gal}(E/F)$, o conjugado $\sigma(\alpha)$ também é raiz de $g$:
+$$g(\sigma(\alpha)) = 0.$$
+
+/Demonstração./ Avaliando $g$ em $\sigma(\alpha)$ e utilizando que $\sigma$ é homomorfismo de anéis que fixa cada coeficiente $\iota(c_i) \in \iota(F)$:
+$$g(\sigma(\alpha)) = \sum_{i=0}^{d} \iota(c_i) \cdot \sigma(\alpha)^i = \sum_{i=0}^{d} \sigma(\iota(c_i)) \cdot \sigma(\alpha^i) = \sigma\!\left(\sum_{i=0}^{d} \iota(c_i) \alpha^i\right) = \sigma(g(\alpha)) = \sigma(0) = 0. \quad \blacksquare$$
+
+*** Implementação em Lean 4
+Definimos a avaliação de um polinômio $g \in F[x]$ em um ponto $\alpha \in E$ (via esquema de Horner) e provamos formalmente que $\sigma(g(\alpha)) = g(\sigma(\alpha))$:
+
+#+begin_src lean4
+section RootPermutation
+variable {F E : Type u} [Field F] [Field E] (ι : RingHom F E)
+
+/-- Avaliação de g ∈ Poly F em α ∈ E via esquema de Horner -/
+def evalInExt : Poly F → E → E
+  | [], _ => CommRing.zero
+  | c :: cs, α => CommRing.add (ι.toFun c) (CommRing.mul α (evalInExt cs α))
+
+/-- Lema de comutação: σ(g(α)) = g(σ(α)) para todo σ ∈ Gal(E/F) -/
+theorem gal_eval_comm (σ : GaloisAut ι) (g : Poly F) (α : E) :
+    σ.toFun (evalInExt ι g α) = evalInExt ι g (σ.toFun α) := by
+  induction g with
+  | nil =>
+    simp [evalInExt]
+    exact σ.map_zero
+  | cons c cs ih =>
+    simp [evalInExt]
+    rw [σ.map_add, σ.fixes_base, σ.map_mul, ih]
+
+/-- Teorema 2.1: Se α é raiz de g ∈ F[x], então σ(α) também é raiz de g -/
+theorem gal_preserves_roots (σ : GaloisAut ι) (g : Poly F) (α : E)
+    (h_root : evalInExt ι g α = CommRing.zero) :
+    evalInExt ι g (σ.toFun α) = CommRing.zero := by
+  rw [← gal_eval_comm, h_root, σ.map_zero]
+
+end RootPermutation
+end StrangeAlgebras.Galois
+#+end_src
+
+* Motor Computacional em Rust: Frobenius, Norma, Traço e Polinômio Mínimo
+:PROPERTIES:
+:header-args:rust: :tangle rust/crates/ch06-galois/src/galois_finite.rs :results silent
+:END:
+
+Para corpos finitos $E = \mathbb{F}_{p^n} = \mathbb{F}_p[x]/(f(x))$ (onde $n = \deg(f)$), o grupo de Galois $\text{Gal}(\mathbb{F}_{p^n} / \mathbb{F}_p)$ é gerado pelo **Automorfismo de Frobenius** $\Phi_p(\alpha) = \alpha^p$.
+
+A partir da órbita de Frobenius $\mathcal{O}(\alpha) = \{\alpha, \Phi_p(\alpha), \Phi_p^2(\alpha), \dots, \Phi_p^{n-1}(\alpha)\}$, computamos diretamente três invariantes fundamentais do Capítulo VI, §5 do Lang:
+1. **Norma de extensão:** $N_{E/F}(\alpha) = \prod_{k=0}^{n-1} \Phi_p^k(\alpha) = \alpha^{(p^n - 1)/(p - 1)} \in \mathbb{F}_p$.
+2. **Traço de extensão:** $\text{Tr}_{E/F}(\alpha) = \sum_{k=0}^{n-1} \Phi_p^k(\alpha) \in \mathbb{F}_p$.
+3. **Polinômio Mínimo sobre $\mathbb{F}_p$:** Se $d$ é o menor inteiro positivo tal que $\Phi_p^d(\alpha) = \alpha$ (o grau da subextensão $\mathbb{F}_p(\alpha) / \mathbb{F}_p$, divisor de $n$), então os conjugados distintos de $\alpha$ são $\alpha, \alpha^p, \dots, \alpha^{p^{d-1}}$ e o polinômio mínimo é
+   $$\text{Irr}(\alpha, \mathbb{F}_p, x) = \prod_{k=0}^{d-1} \big(x - \Phi_p^k(\alpha)\big) \in \mathbb{F}_p[x].$$
+
+#+begin_src rust
+use ch02_rings::polynomials::{Field, Fp, Poly, Ring};
+use ch05_fields::ext_field::{ExtField, ModulusPoly};
+
+/// Operações de Teoria de Galois para extensões finitas E = F_p[x]/(f(x)) sobre F_p
+pub struct FiniteGalois;
+
+impl FiniteGalois {
+    /// Automorfismo de Frobenius Φ_p(α) = α^p em E = F_{p^n}
+    pub fn frobenius<const P: u64, M: ModulusPoly<Fp<P>>>(
+        alpha: &ExtField<Fp<P>, M>,
+    ) -> ExtField<Fp<P>, M> {
+        alpha.pow(P as u128)
+    }
+
+    /// Calcula a órbita completa de Galois [α, α^p, α^(p^2), ..., α^(p^(n-1))]
+    /// onde n = deg(M::modulus()) é o grau da extensão [E : F_p].
+    pub fn galois_orbit<const P: u64, M: ModulusPoly<Fp<P>>>(
+        alpha: &ExtField<Fp<P>, M>,
+    ) -> Vec<ExtField<Fp<P>, M>> {
+        let deg = M::modulus()
+            .degree()
+            .expect("O polinômio mínimo deve ter grau >= 1");
+        let mut orbit = Vec::with_capacity(deg);
+        let mut cur = alpha.clone();
+        for _ in 0..deg {
+            orbit.push(cur.clone());
+            cur = Self::frobenius(&cur);
+        }
+        orbit
+    }
+
+    /// Norma N_{E/F_p}(α) = ∏_{σ ∈ Gal(E/F_p)} σ(α) ∈ F_p (Lang, Cap. VI, §5)
+    pub fn norm<const P: u64, M: ModulusPoly<Fp<P>>>(
+        alpha: &ExtField<Fp<P>, M>,
+    ) -> Fp<P> {
+        let orbit = Self::galois_orbit(alpha);
+        let prod = orbit
+            .into_iter()
+            .fold(ExtField::<Fp<P>, M>::one(), |acc, x| acc.mul(&x));
+        // Pela teoria de Galois, o produto de todos os conjugados pertence ao corpo base F_p
+        prod.rep.coeffs.first().copied().unwrap_or_else(Fp::<P>::zero)
+    }
+
+    /// Traço Tr_{E/F_p}(α) = ∑_{σ ∈ Gal(E/F_p)} σ(α) ∈ F_p (Lang, Cap. VI, §5)
+    pub fn trace<const P: u64, M: ModulusPoly<Fp<P>>>(
+        alpha: &ExtField<Fp<P>, M>,
+    ) -> Fp<P> {
+        let orbit = Self::galois_orbit(alpha);
+        let sum = orbit
+            .into_iter()
+            .fold(ExtField::<Fp<P>, M>::zero(), |acc, x| acc.add(&x));
+        // A soma de todos os conjugados também cai obrigatoriamente em F_p
+        sum.rep.coeffs.first().copied().unwrap_or_else(Fp::<P>::zero)
+    }
+
+    /// Constrói o polinômio mínimo Irr(α, F_p, x) = ∏_{i=0}^{d-1} (x - Φ_p^i(α)) ∈ F_p[x]
+    /// multiplicando os fatores lineares em E[x] e projetando os coeficientes no corpo base F_p.
+    pub fn minimal_polynomial<const P: u64, M: ModulusPoly<Fp<P>>>(
+        alpha: &ExtField<Fp<P>, M>,
+    ) -> Poly<Fp<P>> {
+        // Coleta apenas os conjugados distintos até o ciclo fechar (d divide n)
+        let mut conjugates = vec![alpha.clone()];
+        let mut cur = Self::frobenius(alpha);
+        while cur != *alpha {
+            conjugates.push(cur.clone());
+            cur = Self::frobenius(&cur);
+        }
+
+        // Multiplica ∏ (x - conj) sobre o anel de polinômios E[x]
+        let mut poly_over_e = Poly::<ExtField<Fp<P>, M>>::one();
+        for conj in conjugates {
+            // Fator linear: (-conj) + 1*x
+            let factor = Poly::new(vec![conj.neg(), ExtField::<Fp<P>, M>::one()]);
+            poly_over_e = poly_over_e.mul(&factor);
+        }
+
+        // Projeta cada coeficiente de E para F_p (todos os coeficientes não-constantes devem ser 0)
+        let base_coeffs: Vec<Fp<P>> = poly_over_e
+            .coeffs
+            .into_iter()
+            .map(|c_ext| {
+                assert!(
+                    c_ext.rep.degree().map_or(true, |d| d == 0),
+                    "Coeficiente do polinômio mínimo não pertence ao corpo base F_p!"
+                );
+                c_ext.rep.coeffs.first().copied().unwrap_or_else(Fp::<P>::zero)
+            })
+            .collect();
+
+        Poly::new(base_coeffs)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    type F2 = Fp<2>;
+
+    /// GF(16) = F_2[x] / (x^4 + x + 1)
+    #[derive(Clone, PartialEq, Eq, Debug)]
+    struct GF16Mod;
+
+    impl ModulusPoly<F2> for GF16Mod {
+        fn modulus() -> Poly<F2> {
+            Poly::new(vec![
+                F2::one(),
+                F2::one(),
+                F2::zero(),
+                F2::zero(),
+                F2::one(),
+            ])
+        }
+    }
+
+    type GF16 = ExtField<F2, GF16Mod>;
+
+    #[test]
+    fn test_frobenius_group_order_4() {
+        let alpha = GF16::generator();
+        // O grupo Gal(GF(16)/GF(2)) tem ordem 4: Φ^4(α) = α^(2^4) = α^16 = α
+        let f1 = FiniteGalois::frobenius(&alpha);
+        let f2 = FiniteGalois::frobenius(&f1);
+        let f3 = FiniteGalois::frobenius(&f2);
+        let f4 = FiniteGalois::frobenius(&f3);
+
+        assert_ne!(f1, alpha);
+        assert_ne!(f2, alpha);
+        assert_eq!(f4, alpha);
+    }
+
+    #[test]
+    fn test_minimal_polynomial_and_subfields() {
+        let alpha = GF16::generator();
+
+        // 1. O polinômio mínimo de α deve ser exatamente o módulo x^4 + x + 1
+        assert_eq!(
+            FiniteGalois::minimal_polynomial(&alpha),
+            GF16Mod::modulus()
+        );
+
+        // 2. β = α^5 tem ordem multiplicativa 3 (pois (α^5)^3 = α^15 = 1),
+        // logo β gera o subcorpo intermediário GF(4) ⊂ GF(16) de grau 2 sobre F_2!
+        // Seu polinômio mínimo deve ter grau 2: x^2 + x + 1.
+        let beta = alpha.pow(5);
+        let min_poly_beta = FiniteGalois::minimal_polynomial(&beta);
+        let expected_gf4_poly = Poly::new(vec![F2::one(), F2::one(), F2::one()]);
+        assert_eq!(min_poly_beta, expected_gf4_poly);
+    }
+
+    #[test]
+    fn test_norm_and_trace_properties() {
+        let alpha = GF16::generator();
+        let beta = alpha.pow(3);
+
+        // Multiplicatividade da Norma (Lang, Cap. VI, Teo. 5.1): N(α * β) = N(α) * N(β)
+        let norm_ab = FiniteGalois::norm(&alpha.mul(&beta));
+        let norm_a_mul_b = FiniteGalois::norm(&alpha).mul(&FiniteGalois::norm(&beta));
+        assert_eq!(norm_ab, norm_a_mul_b);
+
+        // Linearidade F_p do Traço (Lang, Cap. VI, Teo. 5.1): Tr(α + β) = Tr(α) + Tr(β)
+        let trace_ab = FiniteGalois::trace(&alpha.add(&beta));
+        let trace_a_add_b = FiniteGalois::trace(&alpha).add(&FiniteGalois::trace(&beta));
+        assert_eq!(trace_ab, trace_a_add_b);
+    }
+}
+#+end_src
+
+* Próximo Passo: Álgebra Linear sobre PIDs e Forma Normal de Smith (Lang, Cap. III e XV)
+Com os Capítulos I, II, IV, V e VI do Lang estruturados entre Lean 4 e Rust, o próximo marco natural no projeto `StrangeAlgebras` é o **Capítulo III / Capítulo XV (Módulos sobre Domínios de Ideais Principais e Álgebra Linear)**:
+1. Formalizar em Lean 4 a estrutura de **$R$-Módulo** (`Module R M`) e **Aplicação $R$-Linear** (`LinearMap R M N`).
+2. Implementar em Rust matrizes genéricas sobre anéis euclidianos (`Matrix<R>`) e o algoritmo da **Forma Normal de Smith (SNF)** — que classifica simultaneamente grupos abelianos finitamente gerados (Cap. I, §8) e formas canônicas de operadores lineares via $K[x]$-módulos (Forma Racional e Forma de Jordan, Cap. XV).
+   

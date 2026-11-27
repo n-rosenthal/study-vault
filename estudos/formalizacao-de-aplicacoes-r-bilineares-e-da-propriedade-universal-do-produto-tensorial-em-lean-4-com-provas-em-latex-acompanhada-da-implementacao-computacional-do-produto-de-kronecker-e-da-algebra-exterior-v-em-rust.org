@@ -1,0 +1,419 @@
+:PROPERTIES:
+:ID:       c8a3f912-4d70-4e18-b521-9f3c6a8d2e47
+:END:
+#+TITLE: Produtos Tensoriais, Propriedade Universal Bilinear e Álgebra Exterior (Lean 4 + Rust)
+#+DATE: [2026-11-27 sex]
+#+DESCRIPTION: Formalização de aplicações R-bilineares e da propriedade universal do produto tensorial em Lean 4 com provas em LaTeX, acompanhada da implementação computacional do Produto de Kronecker e da Álgebra Exterior Λ(V) em Rust.
+#+STATUS: semente
+#+NOTE_TYPE: estudo
+#+FILETAGS: :computer-science/formal-specification:programming/lean:programming/rust:algebra:multilinear-algebra:category-theory:publish:estudo:
+
+* Visão Geral: De Aplicações Bilineares à Álgebra Exterior (Lang, Cap. XVI e XIX)
+Nos estudos anteriores, formalizamos $R$-módulos, aplicações $R$-lineares $\text{Hom}_R(M, N)$ e a Forma Normal de Smith sobre PIDs. Agora avançamos para o **Capítulo XVI do Lang (Produtos Tensoriais)** e o **Capítulo XIX (Produtos Alternados e Álgebra Exterior)**.
+
+O produto tensorial $M \otimes_R N$ resolve um problema universal central da álgebra: transformar o estudo de aplicações **$R$-bilineares** $\beta : M \times N \to P$ no estudo de aplicações **$R$-lineares** $\tilde{\beta} : M \otimes_R N \to P$. Formalmente, existe uma aplicação $R$-bilinear canônica $\tau : M \times N \to M \otimes_R N$ (escrita $(x, y) \mapsto x \otimes y$) tal que, para todo $R$-módulo $P$ e toda aplicação $R$-bilinear $\beta : M \times N \to P$, existe uma **única** aplicação $R$-linear $\tilde{\beta} : M \otimes_R N \to P$ fazendo o diagrama comutar:
+$$\beta(x, y) = \tilde{\beta}(x \otimes y) \qquad \forall (x, y) \in M \times N.$$
+
+Ao tomarmos o quociente da álgebra tensorial $T(V) = \bigoplus_{k \ge 0} V^{\otimes k}$ pelo ideal bilateral gerado pelos tensores quadrados $v \otimes v$ (ou tensores alternados), obtemos a **Álgebra Exterior** $\bigwedge(V) = \bigoplus_{k=0}^{n} \bigwedge^k(V)$ (Lang, Cap. XIX, §1), cujo produto cunha ($\wedge$) captura diretamente determinantes, orientação e independência linear.
+
+Neste documento:
+1. **Formalizamos em Lean 4** a estrutura de aplicação $R$-bilinear (`BilinearMap`), empacotamos a Propriedade Universal (`TensorProductUP`) e provamos o **Teorema da Unicidade Universal** (qualquer dois objetos que satisfaçam a propriedade universal são isomorfos por um único isomorfismo $R$-linear).
+2. **Implementamos em Rust** (`ch16-multilinear`) o **Produto de Kronecker** $A \otimes B$ de matrizes e o motor completo da **Álgebra Exterior** $\bigwedge(V)$ indexada por bitmasks de formas básicas $e_{i_1} \wedge \dots \wedge e_{i_k}$, extraindo o determinante via $\bigwedge^n(T)(e_1 \wedge \dots \wedge e_n) = \det(T)(e_1 \wedge \dots \wedge e_n)$.
+
+* Camada Formal em Lean 4 (~TensorAlgebra.lean~)
+:PROPERTIES:
+:header-args:lean4: :tangle lean/StrangeAlgebras/TensorAlgebra.lean :results silent
+:END:
+
+** Aplicações $R$-Bilineares e Composição com Aplicações Lineares
+Reutilizamos `CommRing`, `AddCommGroup`, `Module` e `LinearMap` de `Modules.lean` para definir aplicações bilineares entre $R$-módulos (Lang, Cap. XVI, §1).
+
+#+begin_src lean4
+import BooleanRingDuality
+import Modules
+
+namespace StrangeAlgebras.Multilinear
+
+open StrangeAlgebras.BooleanDuality
+open StrangeAlgebras.Modules
+
+section Bilinear
+variable (R : Type u) (M : Type v) (N : Type w) (P : Type z)
+variable [CommRing R] [AddCommGroup M] [AddCommGroup N] [AddCommGroup P]
+variable [Module R M] [Module R N] [Module R P]
+
+/-- Capítulo XVI, §1 (Lang): Aplicação R-bilinear β : M × N → P -/
+structure BilinearMap where
+  toFun      : M → N → P
+  add_left   : ∀ (x₁ x₂ : M) (y : N),
+                 toFun (AddCommGroup.add x₁ x₂) y = AddCommGroup.add (toFun x₁ y) (toFun x₂ y)
+  smul_left  : ∀ (r : R) (x : M) (y : N),
+                 toFun (r • x) y = r • toFun x y
+  add_right  : ∀ (x : M) (y₁ y₂ : N),
+                 toFun x (AddCommGroup.add y₁ y₂) = AddCommGroup.add (toFun x y₁) (toFun x y₂)
+  smul_right : ∀ (r : R) (x : M) (y : N),
+                 toFun x (r • y) = r • toFun x y
+
+end Bilinear
+
+/-- Pós-composição de uma aplicação R-bilinear β : M × N → T
+    com uma aplicação R-linear f : T → P resulta em uma aplicação R-bilinear M × N → P -/
+def compLinearBilinear {R M N T P : Type _}
+    [CommRing R] [AddCommGroup M] [AddCommGroup N] [AddCommGroup T] [AddCommGroup P]
+    [Module R M] [Module R N] [Module R T] [Module R P]
+    (f : LinearMap R T P) (β : BilinearMap R M N T) : BilinearMap R M N P where
+  toFun      := fun x y => f.toFun (β.toFun x y)
+  add_left   := fun x₁ x₂ y => by rw [β.add_left, f.map_add]
+  smul_left  := fun r x y   => by rw [β.smul_left, f.map_smul]
+  add_right  := fun x y₁ y₂ => by rw [β.add_right, f.map_add]
+  smul_right := fun r x y   => by rw [β.smul_right, f.map_smul]
+#+end_src
+
+** Propriedade Universal do Produto Tensorial e Teorema da Unicidade
+
+*** Prova Matemática (LaTeX)
+*Teorema 1.1 (Unicidade Universal do Produto Tensorial — Lang, Cap. XVI, §1).* Sejam $(T_1, \tau_1)$ e $(T_2, \tau_2)$ dois $R$-módulos equipados com aplicações $R$-bilineares $\tau_i : M \times N \to T_i$ que satisfazem a propriedade universal do produto tensorial. Então existe um **único** isomorfismo $R$-linear $\Phi : T_1 \xrightarrow{\sim} T_2$ tal que $\Phi(\tau_1(x, y)) = \tau_2(x, y)$ para todo $(x, y) \in M \times N$.
+
+/Demonstração./
+1. Aplicando a propriedade universal de $(T_1, \tau_1)$ à aplicação bilinear $\tau_2 : M \times N \to T_2$, obtemos uma única aplicação $R$-linear $\Phi : T_1 \to T_2$ com $\Phi \circ \tau_1 = \tau_2$.
+2. Simetricamente, aplicando a propriedade universal de $(T_2, \tau_2)$ a $\tau_1 : M \times N \to T_1$, obtemos uma única aplicação $R$-linear $\Psi : T_2 \to T_1$ com $\Psi \circ \tau_2 = \tau_1$.
+3. A composição $R$-linear $\Psi \circ \Phi : T_1 \to T_1$ satisfaz $(\Psi \circ \Phi) \circ \tau_1 = \Psi \circ (\Phi \circ \tau_1) = \Psi \circ \tau_2 = \tau_1 = \text{id}_{T_1} \circ \tau_1$. Pela **unicidade** da fatoração linear através de $(T_1, \tau_1)$ para a própria aplicação bilinear $\tau_1$, segue $\Psi \circ \Phi = \text{id}_{T_1}$.
+4. Analogamente, $\Phi \circ \Psi = \text{id}_{T_2}$. Portanto, $\Phi$ e $\Psi$ são isomorfismos inversos mútuos. $\blacksquare$
+
+*** Implementação e Prova Formal em Lean 4
+No Lean 4, encapsulamos a propriedade universal como uma estrutura dependente `TensorProductUP` (que exige existência e unicidade da fatoração `lift`) e provamos formalmente que quaisquer duas realizações $(T_1, \tau_1)$ e $(T_2, \tau_2)$ são mutuamente inversas:
+
+#+begin_src lean4
+section UniversalProperty
+variable {R M N : Type _}
+variable [CommRing R] [AddCommGroup M] [AddCommGroup N] [Module R M] [Module R N]
+
+/-- Composição de aplicações R-lineares: (g ∘ f)(x) = g(f(x)) -/
+def linearComp {A B C : Type _}
+    [AddCommGroup A] [AddCommGroup B] [AddCommGroup C]
+    [Module R A] [Module R B] [Module R C]
+    (g : LinearMap R B C) (f : LinearMap R A B) : LinearMap R A C where
+  toFun    := fun x => g.toFun (f.toFun x)
+  map_add  := fun x y => by rw [f.map_add, g.map_add]
+  map_smul := fun r x   => by rw [f.map_smul, g.map_smul]
+
+/-- Aplicação R-linear identidade id_A : A → A -/
+def linearId (A : Type _) [AddCommGroup A] [Module R A] : LinearMap R A A where
+  toFun    := id
+  map_add  := fun _ _ => rfl
+  map_smul := fun _ _ => rfl
+
+/-- Propriedade Universal do Produto Tensorial (T, τ) para M × N sobre R:
+    Para todo R-módulo P e toda aplicação bilinear β : M × N → P,
+    existe uma única aplicação linear `lift β : T → P` tal que `lift β (τ x y) = β x y`. -/
+structure TensorProductUP (T : Type _) [AddCommGroup T] [Module R T] where
+  tau         : BilinearMap R M N T
+  lift        : ∀ {P : Type _} [AddCommGroup P] [Module R P],
+                  BilinearMap R M N P → LinearMap R T P
+  lift_comm   : ∀ {P : Type _} [AddCommGroup P] [Module R P]
+                  (β : BilinearMap R M N P) (x : M) (y : N),
+                  (lift β).toFun (tau.toFun x y) = β.toFun x y
+  lift_unique : ∀ {P : Type _} [AddCommGroup P] [Module R P]
+                  (β : BilinearMap R M N P) (f : LinearMap R T P),
+                  (∀ x y, f.toFun (tau.toFun x y) = β.toFun x y) → f = lift β
+
+/-- Teorema 1.1 (Unicidade Universal): Se (T₁, up₁) e (T₂, up₂) satisfazem
+    a propriedade universal do produto tensorial, então Φ = up₁.lift up₂.tau
+    e Ψ = up₂.lift up₁.tau são isomorfismos R-lineares inversos: Ψ ∘ Φ = id_{T₁}. -/
+theorem tensor_up_unique_iso_left
+    {T₁ T₂ : Type _} [AddCommGroup T₁] [Module R T₁] [AddCommGroup T₂] [Module R T₂]
+    (up₁ : TensorProductUP (R := R) (M := M) (N := N) T₁)
+    (up₂ : TensorProductUP (R := R) (M := M) (N := N) T₂) :
+    linearComp (up₂.lift up₁.tau) (up₁.lift up₂.tau) = linearId T₁ := by
+  let phi := up₁.lift up₂.tau
+  let psi := up₂.lift up₁.tau
+  -- Passo 1: Mostramos que (psi ∘ phi) ∘ τ₁ = τ₁
+  have h_comp : ∀ x y, (linearComp psi phi).toFun (up₁.tau.toFun x y) = up₁.tau.toFun x y := by
+    intro x y
+    dsimp [linearComp, phi, psi]
+    rw [up₁.lift_comm, up₂.lift_comm]
+  -- Passo 2: Mostramos que id_{T₁} ∘ τ₁ = τ₁
+  have h_id : ∀ x y, (linearId T₁).toFun (up₁.tau.toFun x y) = up₁.tau.toFun x y := by
+    intro x y
+    rfl
+  -- Passo 3: Pela unicidade da fatoração em up₁ para β = up₁.tau,
+  -- ambas as aplicações lineares coincidem com `up₁.lift up₁.tau`
+  have eq1 : linearComp psi phi = up₁.lift up₁.tau := up₁.lift_unique up₁.tau _ h_comp
+  have eq2 : linearId T₁ = up₁.lift up₁.tau        := up₁.lift_unique up₁.tau _ h_id
+  rw [eq1, eq2]
+
+end UniversalProperty
+end StrangeAlgebras.Multilinear
+#+end_src
+
+* Motor Computacional em Rust: Produto de Kronecker e Álgebra Exterior $\bigwedge(V)$
+:PROPERTIES:
+:header-args:rust: :tangle rust/crates/ch16-multilinear/src/exterior.rs :results silent
+:END:
+
+No Rust, implementamos duas construções concretas fundamentais dos Capítulos XVI e XIX do Lang sobre qualquer anel comutativo `Ring`:
+
+1. **Produto de Kronecker ($A \otimes B$):** Dada uma transformação linear $A \in \text{Mat}_{m \times n}(R)$ e $B \in \text{Mat}_{p \times q}(R)$, sua ação tensorial na base canônica $e_i \otimes f_j$ é representada pela matriz em blocos $(mp) \times (nq)$ com entradas $(A \otimes B)_{(i \cdot p + k),\, (j \cdot q + l)} = A_{i,j} \cdot B_{k,l}$.
+2. **Álgebra Exterior $\bigwedge(R^n)$ (`ExteriorAlgebra<R>`):**
+   - Cada forma básica $e_{i_1} \wedge e_{i_2} \wedge \dots \wedge e_{i_k}$ ($i_1 < i_2 < \dots < i_k$) é indexada por uma **máscara de bits** `mask: usize` de $n$ bits (onde `mask.count_ones()` é o grau $k$ da $k$-forma).
+   - O **produto cunha** ($\wedge$) de duas formas básicas $e_A \wedge e_B$ anula-se imediatamente se $A \cap B \neq \emptyset$ (`(mask_a & mask_b) != 0`, refletindo $v \wedge v = 0$), ou resulta em $(-1)^{\text{inv}(A, B)} e_{A \cup B}$, onde $\text{inv}(A, B)$ é o número de inversões (pares $(i \in A, j \in B)$ com $i > j$) necessárias para ordenar os índices.
+   - **Determinante via Potência Exterior Máxima (Lang, Cap. XIX, §2):** Dado um endomorfismo $T : R^n \to R^n$ com colunas $v_0, v_1, \dots, v_{n-1}$, o produto cunha $v_0 \wedge v_1 \wedge \dots \wedge v_{n-1} \in \bigwedge^n(R^n)$ possui uma única componente escalar na base $e_0 \wedge e_1 \wedge \dots \wedge e_{n-1}$, que é exatamente $\det(T)$!
+
+#+begin_src rust
+use std::fmt;
+use ch02_rings::polynomials::Ring;
+
+/// Produto de Kronecker A ⊗ B de duas matrizes sobre um anel comutativo R (Lang, Cap. XVI)
+pub fn kronecker_product<R: Ring>(a: &[Vec<R>], b: &[Vec<R>]) -> Vec<Vec<R>> {
+    if a.is_empty() || b.is_empty() {
+        return Vec::new();
+    }
+    let (m, n) = (a.len(), a[0].len());
+    let (p, q) = (b.len(), b[0].len());
+
+    let mut out = vec![vec![R::zero(); n * q]; m * p];
+    for i in 0..m {
+        for j in 0..n {
+            for k in 0..p {
+                for l in 0..q {
+                    out[i * p + k][j * q + l] = a[i][j].mul(&b[k][l]);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Capítulo XIX, §1 (Lang): Elemento da Álgebra Exterior Λ(R^n) = ⨁_{k=0}^n Λ^k(R^n)
+/// Representado no espaço de dimensão 2^n indexado por bitmasks de formas básicas.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct ExteriorForm<R: Ring> {
+    pub dim: usize,
+    /// coeffs[mask] é o coeficiente da forma básica e_{i_1} ∧ ... ∧ e_{i_k}
+    pub coeffs: Vec<R>,
+}
+
+impl<R: Ring> ExteriorForm<R> {
+    pub fn zero(dim: usize) -> Self {
+        Self {
+            dim,
+            coeffs: vec![R::zero(); 1usize << dim],
+        }
+    }
+
+    pub fn scalar(dim: usize, c: R) -> Self {
+        let mut form = Self::zero(dim);
+        form.coeffs[0] = c;
+        form
+    }
+
+    /// Constrói uma 1-forma v = ∑_{i=0}^{dim-1} v_i e_i ∈ Λ^1(R^n)
+    pub fn from_vector(vec: &[R]) -> Self {
+        let dim = vec.len();
+        let mut form = Self::zero(dim);
+        for (i, c) in vec.iter().enumerate() {
+            form.coeffs[1usize << i] = c.clone();
+        }
+        form
+    }
+
+    /// Forma de volume canônica ω = e_0 ∧ e_1 ∧ ... ∧ e_{dim-1} ∈ Λ^n(R^n)
+    pub fn volume_basis(dim: usize) -> Self {
+        let mut form = Self::zero(dim);
+        let full_mask = (1usize << dim) - 1;
+        form.coeffs[full_mask] = R::one();
+        form
+    }
+
+    /// Adição de multivetores em Λ(R^n)
+    pub fn add(&self, other: &Self) -> Self {
+        assert_eq!(self.dim, other.dim);
+        let coeffs = self
+            .coeffs
+            .iter()
+            .zip(&other.coeffs)
+            .map(|(a, b)| a.add(b))
+            .collect();
+        Self {
+            dim: self.dim,
+            coeffs,
+        }
+    }
+
+    /// Calcula o sinal (-1)^inv de ordenação ao concatenar os índices de `mask_a` e `mask_b`
+    /// (assumindo mask_a & mask_b == 0). Retorna true se o número de inversões for ímpar.
+    fn wedge_sign_is_odd(mask_a: usize, mask_b: usize, dim: usize) -> bool {
+        let mut inversions = 0usize;
+        for i in 0..dim {
+            if (mask_a & (1 << i)) != 0 {
+                // Conta quantos bits ativos em mask_b possuem índice j < i
+                let lower_mask = (1usize << i) - 1;
+                inversions += (mask_b & lower_mask).count_ones() as usize;
+            }
+        }
+        (inversions & 1) == 1
+    }
+
+    /// Produto Cunha (Wedge Product) α ∧ β ∈ Λ(R^n) (Lang, Cap. XIX, §1)
+    /// Satisfaz associatividade, bilinearidade e anticomutatividade graduada:
+    /// e_i ∧ e_j = - (e_j ∧ e_i) e e_i ∧ e_i = 0.
+    pub fn wedge(&self, other: &Self) -> Self {
+        assert_eq!(self.dim, other.dim);
+        let mut out = Self::zero(self.dim);
+        let size = self.coeffs.len();
+
+        for m_a in 0..size {
+            if self.coeffs[m_a].is_zero() {
+                continue;
+            }
+            for m_b in 0..size {
+                // Propriedade alternada: se compartilham qualquer vetor da base, o produto é 0
+                if (m_a & m_b) != 0 || other.coeffs[m_b].is_zero() {
+                    continue;
+                }
+                let union_mask = m_a | m_b;
+                let mut prod = self.coeffs[m_a].mul(&other.coeffs[m_b]);
+                if Self::wedge_sign_is_odd(m_a, m_b, self.dim) {
+                    prod = prod.neg();
+                }
+                out.coeffs[union_mask] = out.coeffs[union_mask].add(&prod);
+            }
+        }
+        out
+    }
+
+    /// Extrai a projeção homogênea de grau k (componente em Λ^k(R^n))
+    pub fn grade_part(&self, k: usize) -> Self {
+        let mut out = Self::zero(self.dim);
+        for (mask, c) in self.coeffs.iter().enumerate() {
+            if mask.count_ones() as usize == k {
+                out.coeffs[mask] = c.clone();
+            }
+        }
+        out
+    }
+}
+
+/// Calcula o determinante de uma matriz n × n sobre qualquer anel comutativo R
+/// via potência exterior máxima Λ^n(T): T(e_0) ∧ T(e_1) ∧ ... ∧ T(e_{n-1}) = det(T) (e_0 ∧ ... ∧ e_{n-1}).
+/// Este método não exige divisões no anel R (funciona inclusive sobre Z ou R[x])!
+pub fn exterior_determinant<R: Ring>(cols: &[Vec<R>]) -> R {
+    let n = cols.len();
+    if n == 0 {
+        return R::one();
+    }
+    let mut acc = ExteriorForm::scalar(n, R::one());
+    for col in cols {
+        assert_eq!(col.len(), n);
+        let v_j = ExteriorForm::from_vector(col);
+        acc = acc.wedge(&v_j);
+    }
+    let full_mask = (1usize << n) - 1;
+    acc.coeffs[full_mask].clone()
+}
+
+impl<R: Ring> fmt::Display for ExteriorForm<R> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut terms = Vec::new();
+        for (mask, c) in self.coeffs.iter().enumerate() {
+            if c.is_zero() {
+                continue;
+            }
+            if mask == 0 {
+                terms.push(format!("{}", c));
+            } else {
+                let mut basis = Vec::new();
+                for i in 0..self.dim {
+                    if (mask & (1 << i)) != 0 {
+                        basis.push(format!("e{}", i + 1));
+                    }
+                }
+                terms.push(format!("({})·{}", c, basis.join("∧")));
+            }
+        }
+        if terms.is_empty() {
+            write!(f, "0")
+        } else {
+            write!(f, "{}", terms.join(" + "))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ch02_rings::polynomials::{Fp, Poly};
+    // Usa a instância `impl Ring for i64` já definida em `ch03-modules`
+
+    #[test]
+    fn test_exterior_anticommutativity_and_nilpotence() {
+        // Em Λ(Z^3): v = 2e_1 + 3e_2 - e_3, w = e_1 - 4e_2 + 5e_3
+        let v = ExteriorForm::from_vector(&[2i64, 3, -1]);
+        let w = ExteriorForm::from_vector(&[1i64, -4, 5]);
+        let zero = ExteriorForm::zero(3);
+
+        // Nilpotência: v ∧ v = 0
+        assert_eq!(v.wedge(&v), zero);
+
+        // Anticomutatividade de 1-formas: v ∧ w = -(w ∧ v)
+        let vw = v.wedge(&w);
+        let wv = w.wedge(&v);
+        assert_eq!(vw.add(&wv), zero);
+    }
+
+    #[test]
+    fn test_determinant_via_top_exterior_power() {
+        // Matriz 3×3 sobre Z:
+        // Colunas: [1, 0, 2], [2, -1, 3], [4, 1, 8]
+        // det = 1*(-8 - 3) - 2*(0 - 2) + 4*(0 - (-2)) = -11 + 4 + 8 = 1
+        let cols = vec![
+            vec![1i64, 0, 2],
+            vec![2i64, -1, 3],
+            vec![4i64, 1, 8],
+        ];
+        assert_eq!(exterior_determinant(&cols), 1);
+    }
+
+    #[test]
+    fn test_characteristic_polynomial_via_exterior_determinant() {
+        // Como `exterior_determinant` exige apenas `Ring` (sem divisões!),
+        // podemos calcular det(xI - A) diretamente sobre o anel de polinômios F_7[x]!
+        // Matriz A = [[2, 1], [3, 4]] sobre F_7:
+        // xI - A = [[x - 2, -1], [-3, x - 4]]
+        // det(xI - A) = (x - 2)(x - 4) - 3 = x^2 - 6x + 5 ≡ x^2 + x + 5 (mod 7)
+        type F7 = Fp<7>;
+        let col0 = vec![
+            Poly::new(vec![F7::new(-2), F7::one()]), // x - 2
+            Poly::new(vec![F7::new(-3)]),            // -3
+        ];
+        let col1 = vec![
+            Poly::new(vec![F7::new(-1)]),            // -1
+            Poly::new(vec![F7::new(-4), F7::one()]), // x - 4
+        ];
+
+        let char_poly = exterior_determinant(&[col0, col1]);
+        let expected = Poly::new(vec![F7::new(5), F7::new(1), F7::one()]);
+        assert_eq!(char_poly, expected);
+    }
+
+    #[test]
+    fn test_kronecker_product() {
+        let a = vec![vec![1i64, 2], vec![3, 4]];
+        let b = vec![vec![0i64, 5], vec![6, 7]];
+        let kron = kronecker_product(&a, &b);
+
+        let expected = vec![
+            vec![0, 5, 0, 10],
+            vec![6, 7, 12, 14],
+            vec![0, 15, 0, 20],
+            vec![18, 21, 24, 28],
+        ];
+        assert_eq!(kron, expected);
+    }
+}
+#+end_src
+
+* Próximo Passo: Álgebra Homológica — Complexos de Cadeias e Homologia (Lang, Cap. XX)
+Com o produto tensorial e a álgebra exterior estabelecidos, o fecho natural desta arquitetura para o projeto `StrangeAlgebras` é o **Capítulo XX do Lang (Álgebra Homológica)**:
+1. Formalizar em Lean 4 a definição de **Complexo de Cadeias** $(C_\bullet, \partial_\bullet)$ governado pelo axioma fundamental $\partial_{n-1} \circ \partial_n = 0$ ($\text{im }\partial_n \subseteq \ker \partial_{n-1}$).
+2. Combinar o **Núcleo (`ker`)** de `Modules.lean` com a **Forma Normal de Smith (`smith_invariant_factors`)** de `ch03-modules` para computar em Rust os grupos de homologia inteira $H_n(C_\bullet) = \ker \partial_n / \text{im }\partial_{n+1}$ (números de Betti e coeficientes de torção) de complexos simpliciais finitos.

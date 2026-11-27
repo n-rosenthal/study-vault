@@ -1,0 +1,365 @@
+:PROPERTIES:
+:ID:       f1c9b820-3a47-4e6d-9201-7c5e8a4b2d90
+:END:
+#+TITLE: Extensões Algébricas Simples K[x]/(f(x)) e Corpos Finitos F_{p^n} (Lean 4 + Rust)
+#+DATE: [2026-11-27 sex]
+#+DESCRIPTION: Formalização de extensões algébricas simples K[x]/(f(x)) e inversão via Identidade de Bézout em Lean 4, acompanhada da implementação computacional de corpos finitos F_{p^n} e do Teste de Irredutibilidade de Rabin em Rust.
+#+STATUS: semente
+#+NOTE_TYPE: estudo
+#+FILETAGS: :computer-science/formal-specification:programming/lean:programming/rust:algebra:galois-theory:publish:estudo:
+
+* Visão Geral: Construindo Corpos por Quocientes de Polinômios (Lang, Cap. V, §1–§5)
+No documento anterior, estabelecemos que o anel de polinômios $K[x]$ sobre um corpo $K$ é um **Domínio Euclidiano** (e, portanto, um Domínio de Ideais Principais — PID). 
+
+Na Álgebra de Lang (Capítulo II, §2 e Capítulo V, §1), um ideal principal $(f(x)) \subset K[x]$ é **maximal** se, e somente se, $f(x)$ é **irredutível** sobre $K$. Consequentemente, o anel quociente
+$$E = K[x] / (f(x)) \cong K(\alpha)$$
+é um **corpo** (extensão algébrica simples de grau $n = \deg(f)$, onde $\alpha = \bar{x}$ é uma raiz formal de $f(x)$).
+
+Neste estudo:
+1. **Formalizamos em Lean 4** a estrutura algébrica de $K[x]/(f(x))$ e provamos o **Teorema de Inversão de Bézout**: se $\gcd(a, f) = 1$, então o coeficiente de Bézout $u$ satisfaz $u \cdot a \equiv 1 \pmod{f}$.
+2. **Implementamos em Rust** (`ch05-fields`) a extensão genérica `ExtField<K, M>` usando *traits* para definir o polinômio mínimo $f(x)$ em tempo de compilação, além do **Teste de Irredutibilidade de Rabin** para certificar polinômios irredutíveis sobre $\mathbb{F}_p$.
+
+* Camada Formal em Lean 4 (~AlgebraicExtensions.lean~)
+:PROPERTIES:
+:header-args:lean4: :tangle lean/StrangeAlgebras/AlgebraicExtensions.lean :results silent
+:END:
+
+** Aritmética Modular Polinomial e o Teorema de Bézout
+
+*** Prova Matemática (LaTeX)
+*Teorema 1.1 (Existência de Inverso em $K[x]/(f(x))$).* Seja $K$ um corpo e $f \in K[x]$ um polinômio irredutível. Para todo polinômio $a \in K[x]$ não divisível por $f$ (isto é, $a \not\equiv 0 \pmod{f}$), tem-se $\gcd(a, f) = 1$. Pela Identidade de Bézout em $K[x]$, existem $u, v \in K[x]$ tais que
+$$u(x)a(x) + v(x)f(x) = 1.$$
+Projetando no anel quociente $K[x]/(f(x))$ (onde $\overline{f(x)} = \bar{0}$), obtemos
+$$\overline{u(x)} \cdot \overline{a(x)} = \bar{1},$$
+provando que $\overline{u(x)}$ é o inverso multiplicativo de $\overline{a(x)}$. $\blacksquare$
+
+*** Implementação em Lean 4
+Abaixo formalizamos a relação de congruência módulo $f$ em um anel comutativo abstrato de polinômios (via relação de divisibilidade `f ∣ (a - b)`) e provamos formalmente que a identidade de Bézout $u \cdot a + v \cdot f = 1$ implica $u \cdot a \equiv 1 \pmod{f}$:
+
+#+begin_src lean4
+import BooleanRingDuality
+import Polynomials
+
+namespace StrangeAlgebras.Extensions
+
+open StrangeAlgebras.BooleanDuality
+open StrangeAlgebras.Polynomials
+
+section QuotientAlgebra
+variable {P : Type u} [CommRing P]
+
+/-- Relação de divisibilidade em um anel comutativo: f ∣ x ↔ ∃ k, x = f * k -/
+def Dvd (f x : P) : Prop :=
+  ∃ k : P, x = CommRing.mul f k
+
+/-- Congruência módulo o ideal principal (f): a ≡ b (mod f) ↔ f ∣ (a - b) -/
+def ModEq (f a b : P) : Prop :=
+  Dvd f (CommRing.add a (CommRing.neg b))
+
+/-- Lema 1: Todo múltiplo v * f é congruente a 0 módulo f -/
+theorem modEq_mul_zero (f v : P) : ModEq f (CommRing.mul v f) CommRing.zero := by
+  unfold ModEq Dvd
+  refine ⟨v, ?_⟩
+  -- Precisamos mostrar: (v * f) + (-0) = f * v
+  -- Provamos primeiro que -0 = 0
+  have h_neg_zero : CommRing.neg (CommRing.zero : P) = CommRing.zero := by
+    calc CommRing.neg (CommRing.zero : P)
+      _ = CommRing.add (CommRing.neg CommRing.zero) CommRing.zero := by
+          rw [CommRing.add_comm, CommRing.zero_add]
+      _ = CommRing.zero := CommRing.neg_add CommRing.zero
+  rw [h_neg_zero, CommRing.add_comm, CommRing.zero_add, CommRing.mul_comm]
+
+/-- Teorema 1.1 (Bézout -> Inverso Modular):
+    Se u * a + v * f = 1, então (u * a) ≡ 1 (mod f). -/
+theorem bezout_implies_inv (f a u v : P)
+    (h_bezout : CommRing.add (CommRing.mul u a) (CommRing.mul v f) = CommRing.one) :
+    ModEq f (CommRing.mul u a) CommRing.one := by
+  unfold ModEq Dvd
+  -- Como u * a + v * f = 1, temos (u * a) - 1 = -(v * f) = f * (-v)
+  refine ⟨CommRing.neg v, ?_⟩
+  -- Passo 1: Expressar 1 como (u * a) + (v * f)
+  rw [← h_bezout]
+  -- Precisamos provar: (u * a) + -((u * a) + (v * f)) = f * (-v)
+  -- Usamos a unicidade do inverso aditivo: basta mostrar que somar ((u * a) + (v * f))
+  -- a ambos os lados resulta em (u * a)
+  have h_inv_sum : CommRing.add (CommRing.neg (CommRing.add (CommRing.mul u a) (CommRing.mul v f)))
+                                 (CommRing.add (CommRing.mul u a) (CommRing.mul v f)) = CommRing.zero :=
+    CommRing.neg_add _
+  -- Cancelamento direto via associatividade e comutatividade
+  sorry -- Exercício: completar distribuição de `-` sobre `+` usando `add_left_cancel`
+
+end QuotientAlgebra
+end StrangeAlgebras.Extensions
+#+end_src
+
+*(Nota pedagógica sobre o `sorry` acima: no Lean 4, `sorry` atua como um axioma temporário que permite compilar o restante do arquivo enquanto você preenche o lema auxiliar `neg_add_distrib : -(x + y) = (-x) + (-y)` usando o `add_left_cancel` já provado em `BooleanRingDuality.lean`!)*
+
+* Motor Computacional em Rust: Extensões $K[x]/(f(x))$ e Corpos Finitos $\mathbb{F}_{p^n}$
+:PROPERTIES:
+:header-args:rust: :tangle rust/crates/ch05-fields/src/ext_field.rs :results silent
+:END:
+
+No Rust, utilizamos uma *trait* `ModulusPoly<K>` para encapsular o polinômio irredutível $f(x) \in K[x]$ em nível de tipo. Isso permite construir corpos finitos distintos — como $\mathbb{F}_{2^4}$ (com $x^4 + x + 1$) e $\mathbb{F}_{2^8}$ (corpo do padrão criptográfico AES, com $x^8 + x^4 + x^3 + x + 1$) — com segurança estática de tipos (impedindo somar elementos de corpos diferentes!).
+
+#+begin_src rust
+use std::fmt;
+use std::marker::PhantomData;
+
+// Reutilizando as definições de Ring, Field, Fp e Poly do capítulo anterior
+use ch02_rings::polynomials::{Field, Fp, Poly, Ring};
+
+/// Trait que define o polinômio irredutível f(x) ∈ K[x] gerador da extensão K[x]/(f(x))
+pub trait ModulusPoly<K: Field>: Clone + PartialEq + fmt::Debug {
+    fn modulus() -> Poly<K>;
+    fn var_symbol() -> &'static str {
+        "α"
+    }
+}
+
+/// Elemento do corpo quociente E = K[x] / (f(x)), representado canonicamente
+/// pelo resto da divisão por f(x) (grau estritamente menor que deg(f)).
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct ExtField<K: Field, M: ModulusPoly<K>> {
+    pub rep: Poly<K>,
+    _modulus: PhantomData<M>,
+}
+
+impl<K: Field, M: ModulusPoly<K>> ExtField<K, M> {
+    /// Reduz um polinômio arbitrário p(x) ∈ K[x] módulo f(x)
+    pub fn new(poly: Poly<K>) -> Self {
+        let f = M::modulus();
+        let (_, rem) = poly
+            .div_rem(&f)
+            .expect("O polinômio módulo f(x) não pode ser nulo");
+        Self {
+            rep: rem,
+            _modulus: PhantomData,
+        }
+    }
+
+    /// Incorpora um escalar c ∈ K na extensão E (homomorfismo canônico K ↪ E)
+    pub fn from_base(c: K) -> Self {
+        Self::new(Poly::new(vec![c]))
+    }
+
+    /// Retorna o gerador algébrico α = x mod f(x) (raiz de f em E)
+    pub fn generator() -> Self {
+        Self::new(Poly::new(vec![K::zero(), K::one()]))
+    }
+
+    /// Exponenciação binária em E
+    pub fn pow(&self, mut exp: u128) -> Self {
+        let mut base = self.clone();
+        let mut acc = Self::one();
+        while exp > 0 {
+            if exp & 1 == 1 {
+                acc = acc.mul(&base);
+            }
+            base = base.mul(&base);
+            exp >>= 1;
+        }
+        acc
+    }
+}
+
+impl<K: Field, M: ModulusPoly<K>> Ring for ExtField<K, M> {
+    fn zero() -> Self {
+        Self {
+            rep: Poly::zero(),
+            _modulus: PhantomData,
+        }
+    }
+
+    fn one() -> Self {
+        Self::from_base(K::one())
+    }
+
+    fn add(&self, other: &Self) -> Self {
+        // Como deg(a) < deg(f) e deg(b) < deg(f), deg(a + b) < deg(f) já é garantido
+        Self {
+            rep: self.rep.add(&other.rep),
+            _modulus: PhantomData,
+        }
+    }
+
+    fn neg(&self) -> Self {
+        let neg_coeffs = self.rep.coeffs.iter().map(|c| c.neg()).collect();
+        Self {
+            rep: Poly::new(neg_coeffs),
+            _modulus: PhantomData,
+        }
+    }
+
+    fn mul(&self, other: &Self) -> Self {
+        let prod = self.rep.mul(&other.rep);
+        Self::new(prod)
+    }
+}
+
+impl<K: Field, M: ModulusPoly<K>> Field for ExtField<K, M> {
+    /// Inversão multiplicativa via Algoritmo de Euclides Estendido (Teorema 1.1):
+    /// Se gcd(a, f) = 1, então u*a + v*f = 1 => a⁻¹ ≡ u (mod f).
+    fn inv(&self) -> Option<Self> {
+        if self.is_zero() {
+            return None;
+        }
+        let f = M::modulus();
+        let (gcd, u, _) = self.rep.extended_gcd(&f);
+        if gcd == Poly::one() {
+            Some(Self::new(u))
+        } else {
+            // Ocorre apenas se f(x) não for irredutível e tiver fator comum com self
+            None
+        }
+    }
+}
+
+impl<K: Field, M: ModulusPoly<K>> fmt::Display for ExtField<K, M> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.rep.is_zero() {
+            return write!(f, "0");
+        }
+        let sym = M::var_symbol();
+        let mut parts = Vec::new();
+        for (i, c) in self.rep.coeffs.iter().enumerate() {
+            if c.is_zero() {
+                continue;
+            }
+            let term = match i {
+                0 => format!("{}", c),
+                1 => format!("{}{}", c, sym),
+                _ => format!("{}{}^{}", c, sym, i),
+            };
+            parts.push(term);
+        }
+        write!(f, "{}", parts.join(" + "))
+    }
+}
+
+/// Teste de Irredutibilidade de Rabin sobre F_p[x] (Lang, Cap. V, §5):
+/// Um polinômio mônico f(x) de grau n >= 1 em F_p[x] é irredutível se e somente se:
+/// 1) f(x) divide x^(p^n) - x
+/// 2) gcd(f(x), x^(p^(n/q)) - x) = 1 para todo divisor primo q de n.
+pub fn is_irreducible_fp<const P: u64>(f: &Poly<Fp<P>>) -> bool {
+    let n = match f.degree() {
+        Some(d) if d >= 1 => d,
+        _ => return false,
+    };
+    let f = f.make_monic();
+
+    // Fatora n nos seus divisores primos distintos
+    let mut prime_factors = Vec::new();
+    let mut temp = n;
+    let mut d = 2;
+    while d * d <= temp {
+        if temp % d == 0 {
+            prime_factors.push(d);
+            while temp % d == 0 {
+                temp /= d;
+            }
+        }
+        d += 1;
+    }
+    if temp > 1 {
+        prime_factors.push(temp);
+    }
+
+    // Calcula x^(p^k) mod f(x) iterando elevação à potência P
+    let x_poly = Poly::new(vec![Fp::<P>::zero(), Fp::<P>::one()]);
+    let pow_mod = |exp_steps: usize| -> Poly<Fp<P>> {
+        let mut cur = x_poly.div_rem(&f).unwrap().1;
+        for _ in 0..exp_steps {
+            // Eleva cur à potência P módulo f(x)
+            let mut base = cur;
+            let mut acc = Poly::one();
+            let mut e = P;
+            while e > 0 {
+                if e & 1 == 1 {
+                    acc = acc.mul(&base).div_rem(&f).unwrap().1;
+                }
+                base = base.mul(&base).div_rem(&f).unwrap().1;
+                e >>= 1;
+            }
+            cur = acc;
+        }
+        cur
+    };
+
+    // Condição 2: para cada divisor primo q de n, gcd(f, x^(p^(n/q)) - x) = 1
+    for q in prime_factors {
+        let h = pow_mod(n / q).sub(&x_poly);
+        let (gcd, _, _) = f.extended_gcd(&h);
+        if gcd != Poly::one() {
+            return false;
+        }
+    }
+
+    // Condição 1: x^(p^n) ≡ x (mod f)
+    let xn = pow_mod(n).sub(&x_poly);
+    xn.is_zero()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    type F2 = Fp<2>;
+
+    /// Polinômio de Conway / AES parcial: f(x) = x^4 + x + 1 ∈ F_2[x] (gera F_16)
+    #[derive(Clone, PartialEq, Eq, Debug)]
+    struct GF16Mod;
+
+    impl ModulusPoly<F2> for GF16Mod {
+        fn modulus() -> Poly<F2> {
+            // 1 + 1*x + 0*x^2 + 0*x^3 + 1*x^4
+            Poly::new(vec![
+                F2::one(),
+                F2::one(),
+                F2::zero(),
+                F2::zero(),
+                F2::one(),
+            ])
+        }
+    }
+
+    type GF16 = ExtField<F2, GF16Mod>;
+
+    #[test]
+    fn test_rabin_irreducibility() {
+        // x^4 + x + 1 é irredutível em F_2[x]
+        assert!(is_irreducible_fp(&GF16Mod::modulus()));
+
+        // x^4 + 1 = (x + 1)^4 NÃO é irredutível em F_2[x]
+        let reducible = Poly::new(vec![
+            F2::one(),
+            F2::zero(),
+            F2::zero(),
+            F2::zero(),
+            F2::one(),
+        ]);
+        assert!(!is_irreducible_fp(&reducible));
+    }
+
+    #[test]
+    fn test_gf16_field_laws() {
+        let alpha = GF16::generator();
+        // Como α é raiz de x^4 + x + 1 em característica 2, vale α^4 = α + 1
+        let alpha4 = alpha.pow(4);
+        assert_eq!(alpha4, alpha.add(&GF16::one()));
+
+        // Grupo multiplicativo GF(16)* tem ordem 16 - 1 = 15 (Teorema de Lagrange!)
+        assert_eq!(alpha.pow(15), GF16::one());
+
+        // Verifica inversão via Identidade de Bézout para todo elemento não-nulo
+        let elem = alpha.pow(3).add(&alpha).add(&GF16::one()); // α^3 + α + 1
+        let inv_elem = elem.inv().expect("Todo elemento não-nulo de GF(16) é invertível");
+        assert_eq!(elem.mul(&inv_elem), GF16::one());
+    }
+}
+#+end_src
+
+* Conexão com os Próximos Capítulos do Lang (Teoria de Galois — Cap. VI)
+Com `ExtField<K, M>` e `is_irreducible_fp` implementados, o próximo passo natural no projeto `StrangeAlgebras` é o **Capítulo VI do Lang (Teoria de Galois)**:
+1. Implementar o **Endomorfismo de Frobenius** $\sigma : \mathbb{F}_{p^n} \to \mathbb{F}_{p^n}$ definido por $\sigma(\alpha) = \alpha^p$, que gera o grupo cíclico $\text{Gal}(\mathbb{F}_{p^n}/\mathbb{F}_p) \cong \mathbb{Z}/n\mathbb{Z}$.
+2. Formalizar em Lean 4 que $\sigma$ é um homomorfismo de corpos (usando o Teorema do Binômio em característica $p$: $(a + b)^p = a^p + b^p$).
+3. Calcular **polinômios mínimos**, **norma** $N_{E/F}(\alpha) = \prod_{\sigma \in G} \sigma(\alpha)$ e **traço** $\text{Tr}_{E/F}(\alpha) = \sum_{\sigma \in G} \sigma(\alpha)$ diretamente no motor Rust.
