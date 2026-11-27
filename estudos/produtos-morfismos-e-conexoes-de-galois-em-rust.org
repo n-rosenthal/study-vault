@@ -1,0 +1,392 @@
+:PROPERTIES:
+:ID:       rust-imple--preorder-morphisms
+:END:
+#+TITLE: Produtos, Morfismos e Conexões de Galois em Rust
+#+DATE: [2026-11-26 qui]
+#+DESCRIPTION: Produto cartesiano, ordem lexicográfica, mapas monótonos e conexões de Galois entre pré-ordens
+#+STATUS: semente
+#+NOTE_TYPE: estudo
+#+FILETAGS: :rust:implementation:publish:estudo:
+#+PROPERTY: header-args:rust :tangle src/morphisms.rs :mkdirp yes
+
+* Implementação
+
+Este módulo completa a estrutura categórica de pré-ordens, definindo construções de produto (\( P \times Q \)), morfismos que preservam ordem e adjunções (conexões de Galois).
+
+** Importações
+#+begin_src rust
+use std::collections::{HashMap, HashSet};
+use std::error::Error;
+use std::fmt;
+use std::hash::Hash;
+
+use crate::{Preorder, PreorderSet, Relation};
+#+end_src
+
+** Erros de Morfismo e Adjunção
+Ao construir morfismos finitos \( f: P \to Q \) e conexões de Galois \( f \dashv g \), as seguintes invariantes devem ser verificadas:
+
+1. =Erro= ~IncompleteDomain~: o mapa não define imagem para todos os elementos do domínio de \( P \).
+2. =Erro= ~ExtraDomainElement~: o mapa contém chaves que não pertencem ao domínio de \( P \).
+3. =Erro= ~TargetOutOfDomain~: existe \( x \in P \) tal que \( f(x) \) não pertence ao domínio de \( Q \).
+4. =Erro= ~MonotonicityViolated~: existem \( x, y \in P \) tais que \( x \preceq_P y \), mas \( f(x) \npreceq_Q f(y) \).
+5. =Erro= ~AdjointDomainMismatch~: os morfismos \( f: P \to Q \) e \( g: Q' \to P' \) não possuem domínios e contradomínios compatíveis (\( P \neq P' \) ou \( Q \neq Q' \)).
+6. =Erro= ~AdjunctionViolated~: existem \( p \in P \) e \( q \in Q \) que violam a equivalência \( f(p) \preceq_Q q \iff p \preceq_P g(q) \).
+
+#+begin_src rust
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MorphismError {
+    IncompleteDomain,
+    ExtraDomainElement,
+    TargetOutOfDomain,
+    MonotonicityViolated,
+    AdjointDomainMismatch,
+    AdjunctionViolated,
+}
+
+impl fmt::Display for MorphismError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MorphismError::IncompleteDomain => {
+                write!(f, "invalid map: missing entries for elements in source domain")
+            }
+            MorphismError::ExtraDomainElement => {
+                write!(f, "invalid map: contains keys outside source domain")
+            }
+            MorphismError::TargetOutOfDomain => {
+                write!(f, "invalid map: image element does not belong to target domain")
+            }
+            MorphismError::MonotonicityViolated => {
+                write!(f, "invalid monotone map: order preservation violated")
+            }
+            MorphismError::AdjointDomainMismatch => {
+                write!(f, "invalid Galois connection: source and target preorders do not match")
+            }
+            MorphismError::AdjunctionViolated => {
+                write!(f, "invalid Galois connection: adjunction equivalence f(p) <= q <=> p <= g(q) violated")
+            }
+        }
+    }
+}
+
+impl Error for MorphismError {}
+#+end_src
+
+** Produto Cartesiano e Ordem Lexicográfica
+Dadas duas pré-ordens \( (P, \preceq_P) \) e \( (Q, \preceq_Q) \), existem duas formas canônicas de estruturar o produto cartesiano \( P \times Q \):
+
+1. *Produto direto (/Product Order/):* compara componente a componente:
+   $$(x_1, y_1) \preceq_{\times} (x_2, y_2) \iff x_1 \preceq_P x_2 \land y_1 \preceq_Q y_2$$
+2. *Ordem lexicográfica (/Lexicographic Order/):* prioriza a primeira coordenada e desempata pela segunda quando as primeiras são *equivalentes* em \( P \):
+   $$(x_1, y_1) \preceq_{\text{lex}} (x_2, y_2) \iff x_1 \prec_P x_2 \lor (x_1 \sim_P x_2 \land y_1 \preceq_Q y_2)$$
+
+Note que, em uma pré-ordem geral, o desempate deve testar \( x_1 \sim_P x_2 \) (e não \( x_1 = x_2 \)): caso contrário, elementos equivalentes porém distintos violariam a transitividade da ordem resultante.
+
+#+begin_src rust
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Product<A, B>(pub A, pub B);
+
+impl<A: Preorder, B: Preorder> Preorder for Product<A, B> {
+    fn le(&self, other: &Self) -> bool {
+        self.0.le(&other.0) && self.1.le(&other.1)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Lex<A, B>(pub A, pub B);
+
+impl<A: Preorder, B: Preorder> Preorder for Lex<A, B> {
+    fn le(&self, other: &Self) -> bool {
+        self.0.lt(&other.0) || (self.0.equiv(&other.0) && self.1.le(&other.1))
+    }
+}
+
+impl<T: Eq + Hash + Clone> PreorderSet<T> {
+    pub fn product<U: Eq + Hash + Clone>(&self, other: &PreorderSet<U>) -> PreorderSet<(T, U)> {
+        let mut domain = HashSet::new();
+        for x in &self.relation().domain {
+            for y in &other.relation().domain {
+                domain.insert((x.clone(), y.clone()));
+            }
+        }
+
+        let mut pairs = HashSet::new();
+        for (x1, y1) in &domain {
+            for (x2, y2) in &domain {
+                if self.le(x1, x2) && other.le(y1, y2) {
+                    pairs.insert(((x1.clone(), y1.clone()), (x2.clone(), y2.clone())));
+                }
+            }
+        }
+
+        PreorderSet::try_from(Relation { domain, pairs })
+            .expect("o produto direto de duas pré-ordens é sempre uma pré-ordem")
+    }
+
+    pub fn lexicographic<U: Eq + Hash + Clone>(
+        &self,
+        other: &PreorderSet<U>,
+    ) -> PreorderSet<(T, U)> {
+        let mut domain = HashSet::new();
+        for x in &self.relation().domain {
+            for y in &other.relation().domain {
+                domain.insert((x.clone(), y.clone()));
+            }
+        }
+
+        let mut pairs = HashSet::new();
+        for (x1, y1) in &domain {
+            for (x2, y2) in &domain {
+                let strict_first = self.le(x1, x2) && !self.le(x2, x1);
+                let tied_first = self.equiv(x1, x2) && other.le(y1, y2);
+                if strict_first || tied_first {
+                    pairs.insert(((x1.clone(), y1.clone()), (x2.clone(), y2.clone())));
+                }
+            }
+        }
+
+        PreorderSet::try_from(Relation { domain, pairs })
+            .expect("o produto lexicográfico de duas pré-ordens é sempre uma pré-ordem")
+    }
+}
+#+end_src
+
+** Morfismos Monótonos
+Vendo pré-ordens como categorias finas (onde há no máximo um morfismo \( x \to y \) sempre que \( x \preceq y \)), um *funtor* entre pré-ordens é exatamente uma *função monótona* \( f: P \to Q \):
+
+$$\forall x, y \in P,\quad x \preceq_P y \implies f(x) \preceq_Q f(y)$$
+
+Além da monotonicidade, classificam-se duas propriedades estruturais fortes:
+
+- *Refletor de ordem (/order-reflecting/):* \( f(x) \preceq_Q f(y) \implies x \preceq_P y \).
+- /Embedder/ de ordem (/order-embedding/):* \( x \preceq_P y \iff f(x) \preceq_Q f(y) \) (monótono e refletor simultaneamente).
+
+#+begin_src rust
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MonotoneMap<A: Eq + Hash, B: Eq + Hash> {
+    source: PreorderSet<A>,
+    target: PreorderSet<B>,
+    mapping: HashMap<A, B>,
+}
+
+impl<A: Eq + Hash + Clone, B: Eq + Hash + Clone> MonotoneMap<A, B> {
+    pub fn new(
+        source: PreorderSet<A>,
+        target: PreorderSet<B>,
+        mapping: HashMap<A, B>,
+    ) -> Result<Self, MorphismError> {
+        let src_domain = &source.relation().domain;
+        let tgt_domain = &target.relation().domain;
+
+        if mapping.keys().any(|k| !src_domain.contains(k)) {
+            return Err(MorphismError::ExtraDomainElement);
+        }
+        if src_domain.iter().any(|x| !mapping.contains_key(x)) {
+            return Err(MorphismError::IncompleteDomain);
+        }
+        if mapping.values().any(|v| !tgt_domain.contains(v)) {
+            return Err(MorphismError::TargetOutOfDomain);
+        }
+
+        for (x, y) in &source.relation().pairs {
+            let fx = &mapping[x];
+            let fy = &mapping[y];
+            if !target.le(fx, fy) {
+                return Err(MorphismError::MonotonicityViolated);
+            }
+        }
+
+        Ok(Self {
+            source,
+            target,
+            mapping,
+        })
+    }
+
+    pub fn identity(preorder: PreorderSet<A>) -> MonotoneMap<A, A> {
+        let mapping = preorder
+            .relation()
+            .domain
+            .iter()
+            .map(|x| (x.clone(), x.clone()))
+            .collect();
+
+        MonotoneMap {
+            source: preorder.clone(),
+            target: preorder,
+            mapping,
+        }
+    }
+
+    pub fn source(&self) -> &PreorderSet<A> {
+        &self.source
+    }
+
+    pub fn target(&self) -> &PreorderSet<B> {
+        &self.target
+    }
+
+    pub fn apply(&self, x: &A) -> Option<&B> {
+        self.mapping.get(x)
+    }
+
+    pub fn compose<C: Eq + Hash + Clone>(
+        &self,
+        first: &MonotoneMap<C, A>,
+    ) -> Result<MonotoneMap<C, B>, MorphismError> {
+        if first.target != self.source {
+            return Err(MorphismError::AdjointDomainMismatch);
+        }
+
+        let mapping = first
+            .mapping
+            .iter()
+            .map(|(c, a)| (c.clone(), self.mapping[a].clone()))
+            .collect();
+
+        MonotoneMap::new(first.source.clone(), self.target.clone(), mapping)
+    }
+
+    pub fn is_order_reflecting(&self) -> bool {
+        let src_domain = &self.source.relation().domain;
+        for x in src_domain {
+            for y in src_domain {
+                let fx = &self.mapping[x];
+                let fy = &self.mapping[y];
+                if self.target.le(fx, fy) && !self.source.le(x, y) {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    pub fn is_order_embedding(&self) -> bool {
+        self.is_order_reflecting()
+    }
+}
+#+end_src
+
+** Conexões de Galois (\( f \dashv g \))
+Uma *conexão de Galois* entre duas pré-ordens \( P \) e \( Q \) consiste em um par de morfismos monótonos \( f: P \to Q \) (adjunto à esquerda / inferior) e \( g: Q \to P \) (adjunto à direita / superior) tais que:
+
+$$\forall p \in P,\ \forall q \in Q,\quad f(p) \preceq_Q q \iff p \preceq_P g(q)$$
+
+Toda conexão de Galois \( f \dashv g \) induz automaticamente duas operações fundamentais:
+
+1. *Operador de fecho (/closure operator/) em \( P \):* \( c = g \circ f : P \to P \), satisfazendo extensividade (\( p \preceq_P c(p) \)), monotonicidade e idempotência a menos de equivalência (\( c(c(p)) \sim_P c(p) \)).
+2. *Operador de núcleo (/kernel/interior operator/) em \( Q \):* \( k = f \circ g : Q \to Q \), satisfazendo contratividade (\( k(q) \preceq_Q q \)), monotonicidade e idempotência (\( k(k(q)) \sim_Q k(q) \)).
+
+Os pontos fixos (a menos de equivalência) de \( g \circ f \) em \( P \) são isomorfos aos pontos fixos de \( f \circ g \) em \( Q \), formando o núcleo invariante compartilhado entre os dois domínios (base teórica de interpretação abstrata).
+
+#+begin_src rust
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GaloisConnection<A: Eq + Hash, B: Eq + Hash> {
+    left: MonotoneMap<A, B>,
+    right: MonotoneMap<B, A>,
+}
+
+impl<A: Eq + Hash + Clone, B: Eq + Hash + Clone> GaloisConnection<A, B> {
+    pub fn new(
+        left: MonotoneMap<A, B>,
+        right: MonotoneMap<B, A>,
+    ) -> Result<Self, MorphismError> {
+        if left.source != right.target || left.target != right.source {
+            return Err(MorphismError::AdjointDomainMismatch);
+        }
+
+        let p_domain = &left.source.relation().domain;
+        let q_domain = &left.target.relation().domain;
+
+        for p in p_domain {
+            for q in q_domain {
+                let fp = &left.mapping[p];
+                let gq = &right.mapping[q];
+                let lhs = left.target.le(fp, q);
+                let rhs = left.source.le(p, gq);
+                if lhs != rhs {
+                    return Err(MorphismError::AdjunctionViolated);
+                }
+            }
+        }
+
+        Ok(Self { left, right })
+    }
+
+    pub fn left_adjoint(&self) -> &MonotoneMap<A, B> {
+        &self.left
+    }
+
+    pub fn right_adjoint(&self) -> &MonotoneMap<B, A> {
+        &self.right
+    }
+
+    pub fn closure_operator(&self) -> MonotoneMap<A, A> {
+        self.right
+            .compose(&self.left)
+            .expect("g . f de uma conexão de Galois é sempre um morfismo monótono")
+    }
+
+    pub fn kernel_operator(&self) -> MonotoneMap<B, B> {
+        self.left
+            .compose(&self.right)
+            .expect("f . g de uma conexão de Galois é sempre um morfismo monótono")
+    }
+
+    pub fn closed_elements(&self) -> HashSet<A> {
+        let closure = self.closure_operator();
+        self.left
+            .source
+            .relation()
+            .domain
+            .iter()
+            .filter(|p| {
+                let cp = closure.apply(p).expect("elemento pertence ao domínio");
+                self.left.source.equiv(p, cp)
+            })
+            .cloned()
+            .collect()
+    }
+
+    pub fn open_elements(&self) -> HashSet<B> {
+        let kernel = self.kernel_operator();
+        self.left
+            .target
+            .relation()
+            .domain
+            .iter()
+            .filter(|q| {
+                let kq = kernel.apply(q).expect("elemento pertence ao domínio");
+                self.left.target.equiv(q, kq)
+            })
+            .cloned()
+            .collect()
+    }
+}
+#+end_src
+
+** Representações
+*** =Display=
+#+begin_src rust
+impl<A: fmt::Display, B: fmt::Display> fmt::Display for Product<A, B> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "({}, {})", self.0, self.1)
+    }
+}
+
+impl<A: fmt::Display, B: fmt::Display> fmt::Display for Lex<A, B> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "({}, {})_lex", self.0, self.1)
+    }
+}
+
+impl<A: Eq + Hash + fmt::Display, B: Eq + Hash + fmt::Display> fmt::Display for MonotoneMap<A, B> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "MonotoneMap ({} mappings):", self.mapping.len())?;
+        for (src, dst) in &self.mapping {
+            writeln!(f, "  {} |-> {}", src, dst)?;
+        }
+        Ok(())
+    }
+}
+#+end_src

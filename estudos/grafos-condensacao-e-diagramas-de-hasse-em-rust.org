@@ -1,0 +1,259 @@
+:PROPERTIES:
+:ID:       rust-imple--preorder-hasse
+:END:
+#+TITLE: Grafos, Condensação e Diagramas de Hasse em Rust
+#+DATE: [2026-11-26 qui]
+#+DESCRIPTION: Ponte entre grafos direcionados e pré-ordens: alcançabilidade, condensação de SCCs, extensão linear e diagrama de Hasse
+#+STATUS: semente
+#+NOTE_TYPE: estudo
+#+FILETAGS: :rust:implementation:publish:estudo:
+#+PROPERTY: header-args:rust :tangle src/hasse.rs :mkdirp yes
+
+* Implementação
+
+Este módulo estabelece a equivalência estrutural entre grafos direcionados finitos e pré-ordens, implementando alcançabilidade, condensação em DAG, extensão linear (Teorema de Szpilrajn) e redução transitiva (Diagrama de Hasse).
+
+** Importações
+#+begin_src rust
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::fmt;
+use std::hash::Hash;
+
+use crate::operations::EquivalenceClass;
+use crate::{PartialOrderSet, PreorderSet, Relation, TotalOrderSet};
+#+end_src
+
+** Alcançabilidade e Condensação de Grafos Direcionados
+Dado um grafo direcionado \( G = (V, E) \) com conjunto de vértices \( V \) e arestas direcionadas \( E \subseteq V \times V \), a *relação de alcançabilidade* \( (\preceq_G) \) é definida por:
+
+$$u \preceq_G v \iff \text{existe um caminho direcionado de } u \text{ até } v \text{ em } G$$
+
+Matematicamente, \( (\preceq_G) = E^* \) coincide com o fecho reflexivo-transitivo de \( E \). Portanto, todo grafo direcionado induz canonicamente uma pré-ordem sobre \( V \).
+
+Além disso, nessa pré-ordem:
+
+1. *Componentes Fortemente Conexas (/SCCs/):* dois vértices satisfazem \( u \sim v \iff u \preceq_G v \land v \preceq_G u \) se, e somente se, são mutuamente alcançáveis. Assim, as classes de equivalência \( V / {\sim} \) são exatamente as SCCs de \( G \).
+2. *Condensação (/Condensation DAG/):* o quociente \( (V / {\sim}, \le) \) colapsa cada ciclo em um único nó, produzindo uma ordem parcial acíclica (~PartialOrderSet<EquivalenceClass<T>>~).
+
+#+begin_src rust
+impl<T: Eq + Hash + Clone> PreorderSet<T> {
+    pub fn from_directed_graph<V, E>(vertices: V, edges: E) -> PreorderSet<T>
+    where
+        V: IntoIterator<Item = T>,
+        E: IntoIterator<Item = (T, T)>,
+    {
+        let mut relation = Relation::new();
+        for v in vertices {
+            relation.insert_element(v);
+        }
+        for (u, v) in edges {
+            relation.insert_element(u.clone());
+            relation.insert_element(v.clone());
+            let _ = relation.relate(u, v);
+        }
+        relation.preorder_closure()
+    }
+
+    pub fn reachability_edges(&self) -> HashSet<(T, T)> {
+        self.relation().pairs.clone()
+    }
+
+    pub fn strict_edges(&self) -> HashSet<(T, T)> {
+        self.relation()
+            .pairs
+            .iter()
+            .filter(|(x, y)| x != y && !self.le(y, x))
+            .cloned()
+            .collect()
+    }
+}
+
+impl<T: Ord + Hash + Clone> PreorderSet<T> {
+    pub fn strongly_connected_components(&self) -> HashSet<EquivalenceClass<T>> {
+        self.quotient().relation().domain.clone()
+    }
+
+    pub fn condensation(&self) -> PartialOrderSet<EquivalenceClass<T>> {
+        self.quotient()
+    }
+}
+#+end_src
+
+** Extensão Linear (Teorema de Szpilrajn)
+O *Teorema de Szpilrajn* garante que toda ordem parcial \( (P, \le) \) pode ser estendida a uma ordem total \( (P, \le_{\text{tot}}) \) compatível (\( x \le y \implies x \le_{\text{tot}} y \)).
+
+Em conjuntos finitos, uma extensão linear corresponde exatamente a uma *ordenação topológica* do DAG estrito \( (P, <) \), computada pelo algoritmo de Kahn. Quando aplicada à condensação \( G / {\sim} \) de um grafo com ciclos, produz uma ordenação topológica das suas componentes fortemente conexas.
+
+#+begin_src rust
+impl<T: Eq + Hash + Clone> PartialOrderSet<T> {
+    pub fn le(&self, left: &T, right: &T) -> bool {
+        self.relation().holds(left, right)
+    }
+
+    pub fn lt(&self, left: &T, right: &T) -> bool {
+        left != right && self.le(left, right)
+    }
+
+    pub fn topological_order(&self) -> Vec<T> {
+        let domain = &self.relation().domain;
+        let mut in_degree: HashMap<T, usize> =
+            domain.iter().map(|x| (x.clone(), 0)).collect();
+        let mut dependents: HashMap<T, Vec<T>> =
+            domain.iter().map(|x| (x.clone(), Vec::new())).collect();
+
+        for (x, y) in &self.relation().pairs {
+            if x != y {
+                *in_degree.get_mut(y).expect("elemento pertence ao domínio") += 1;
+                dependents
+                    .get_mut(x)
+                    .expect("elemento pertence ao domínio")
+                    .push(y.clone());
+            }
+        }
+
+        let mut queue: VecDeque<T> = in_degree
+            .iter()
+            .filter_map(|(elem, &deg)| if deg == 0 { Some(elem.clone()) } else { None })
+            .collect();
+
+        let mut order = Vec::with_capacity(domain.len());
+        while let Some(u) = queue.pop_front() {
+            order.push(u.clone());
+            if let Some(nexts) = dependents.get(&u) {
+                for v in nexts {
+                    let deg = in_degree.get_mut(v).expect("elemento pertence ao domínio");
+                    *deg -= 1;
+                    if *deg == 0 {
+                        queue.push_back(v.clone());
+                    }
+                }
+            }
+        }
+
+        order
+    }
+
+    pub fn linear_extension(&self) -> TotalOrderSet<T> {
+        let ordered = self.topological_order();
+        let domain: HashSet<T> = ordered.iter().cloned().collect();
+        let mut pairs = HashSet::new();
+
+        for (i, x) in ordered.iter().enumerate() {
+            for y in &ordered[i..] {
+                pairs.insert((x.clone(), y.clone()));
+            }
+        }
+
+        TotalOrderSet::try_from(Relation { domain, pairs })
+            .expect("toda extensão linear de uma ordem parcial é uma ordem total")
+    }
+}
+#+end_src
+
+** Relação de Cobertura e Diagrama de Hasse
+Em uma ordem parcial \( (P, \le) \), dizemos que \( y \) *cobre* \( x \) (denotado \( x \lessdot y \)) se \( y \) é estritamente maior que \( x \) e não existe nenhum elemento intermediário entre ambos:
+
+$$x \lessdot y \iff x < y \land \neg \exists z \in P,\ (x < z \land z < y)$$
+
+O *Diagrama de Hasse* (ou *redução transitiva*) de \( (P, \le) \) é o grafo direcionado \( H = (P, {\lessdot}) \). Em ordens parciais finitas:
+
+1. \( H \) elimina todos os laços reflexivos \( (x, x) \) e todas as arestas transitivas redundantes \( (x, y) \) dedutíveis por caminhos de comprimento \( \ge 2 \).
+2. O fecho reflexivo-transitivo de \( H \) reconstrói exatamente a ordem parcial original \( (P, \le) \).
+
+#+begin_src rust
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HasseDiagram<T: Eq + Hash> {
+    pub vertices: HashSet<T>,
+    pub cover_edges: HashSet<(T, T)>,
+}
+
+impl<T: Eq + Hash + Clone> PartialOrderSet<T> {
+    pub fn covers(&self, lower: &T, upper: &T) -> bool {
+        if !self.lt(lower, upper) {
+            return false;
+        }
+
+        !self
+            .relation()
+            .domain
+            .iter()
+            .any(|mid| self.lt(lower, mid) && self.lt(mid, upper))
+    }
+
+    pub fn upper_covers(&self, elem: &T) -> HashSet<T> {
+        self.relation()
+            .domain
+            .iter()
+            .filter(|candidate| self.covers(elem, candidate))
+            .cloned()
+            .collect()
+    }
+
+    pub fn lower_covers(&self, elem: &T) -> HashSet<T> {
+        self.relation()
+            .domain
+            .iter()
+            .filter(|candidate| self.covers(candidate, elem))
+            .cloned()
+            .collect()
+    }
+
+    pub fn hasse_diagram(&self) -> HasseDiagram<T> {
+        let vertices = self.relation().domain.clone();
+        let mut cover_edges = HashSet::new();
+
+        for x in &vertices {
+            for y in &vertices {
+                if self.covers(x, y) {
+                    cover_edges.insert((x.clone(), y.clone()));
+                }
+            }
+        }
+
+        HasseDiagram {
+            vertices,
+            cover_edges,
+        }
+    }
+}
+
+impl<T: Ord + Hash + Clone> PreorderSet<T> {
+    pub fn hasse_diagram(&self) -> HasseDiagram<EquivalenceClass<T>> {
+        self.condensation().hasse_diagram()
+    }
+}
+
+impl<T: Eq + Hash + Clone> HasseDiagram<T> {
+    pub fn to_poset(&self) -> PartialOrderSet<T> {
+        let mut relation = Relation::new();
+        for v in &self.vertices {
+            relation.insert_element(v.clone());
+        }
+        for (u, v) in &self.cover_edges {
+            let _ = relation.relate(u.clone(), v.clone());
+        }
+
+        let closure = relation.preorder_closure();
+        PartialOrderSet::try_from(closure.relation().clone())
+            .expect("o fecho reflexivo-transitivo de um diagrama de Hasse é sempre uma ordem parcial")
+    }
+}
+#+end_src
+
+** Representações
+*** =Display=
+#+begin_src rust
+impl<T: Eq + Hash + fmt::Display> fmt::Display for HasseDiagram<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Hasse Vertices ({}):", self.vertices.len())?;
+        for v in &self.vertices {
+            writeln!(f, "  {}", v)?;
+        }
+        writeln!(f, "Covering Relations ({}):", self.cover_edges.len())?;
+        for (lower, upper) in &self.cover_edges {
+            writeln!(f, "  {} -< {}", lower, upper)?;
+        }
+        Ok(())
+    }
+}
+#+end_src

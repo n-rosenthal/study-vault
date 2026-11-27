@@ -1,0 +1,288 @@
+:PROPERTIES:
+:ID:       rust-imple--preorder-operations
+:END:
+#+TITLE: Operações Fundamentais sobre Pré-ordens em Rust
+#+DATE: [2026-11-26 qui]
+#+DESCRIPTION: Dualidade, conjuntos inferiores/superiores, quociente poset e limites em pré-ordens
+#+STATUS: semente
+#+NOTE_TYPE: estudo
+#+FILETAGS: :rust:implementation:publish:estudo:
+#+PROPERTY: header-args:rust :tangle src/operations.rs :mkdirp yes
+
+* Implementação
+
+Este módulo estende as definições base (~Preorder~, ~Relation~, ~PreorderSet~ e ~PartialOrderSet~) com as construções estruturais fundamentais da teoria da ordem.
+
+** Importações
+#+begin_src rust
+use std::collections::{BTreeSet, HashSet};
+use std::fmt;
+use std::hash::Hash;
+
+use crate::{PartialOrderSet, Preorder, PreorderSet, Relation};
+#+end_src
+
+** Dualidade (\( P^{\text{op}} \))
+Toda pré-ordem \( P = (S, \preceq) \) possui uma *pré-ordem dual* (ou oposta) \( P^{\text{op}} = (S, \preceq^{\text{op}}) \) sobre o mesmo domínio, definida pela inversão da relação:
+
+$$x \preceq^{\text{op}} y \iff y \preceq x$$
+
+O princípio da dualidade garante que qualquer propriedade ou construção válida para toda pré-ordem possui uma contraparte dual obtida pela inversão das desigualdades (por exemplo, elementos minimais tornam-se maximais e *downsets* tornam-se *upsets*).
+
+#+begin_src rust
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Dual<T>(pub T);
+
+impl<T: Preorder> Preorder for Dual<T> {
+    fn le(&self, other: &Self) -> bool {
+        other.0.le(&self.0)
+    }
+}
+
+impl<T: Eq + Hash + Clone> PreorderSet<T> {
+    pub fn dual(&self) -> PreorderSet<T> {
+        let pairs = self
+            .relation()
+            .pairs
+            .iter()
+            .map(|(x, y)| (y.clone(), x.clone()))
+            .collect();
+
+        let relation = Relation {
+            domain: self.relation().domain.clone(),
+            pairs,
+        };
+
+        PreorderSet::try_from(relation)
+            .expect("o dual de uma pré-ordem é sempre uma pré-ordem")
+    }
+}
+#+end_src
+
+** Conjuntos Inferiores (/Downsets/) e Superiores (/Upsets/)
+Seja \( (S, \preceq) \) uma pré-ordem e \( X \subseteq S \) um subconjunto qualquer:
+
+- *Conjunto inferior gerado (/downset/):* \( \downarrow X = \{ y \in S \mid \exists x \in X,\ y \preceq x \} \).
+- *Conjunto superior gerado (/upset/):* \( \uparrow X = \{ y \in S \mid \exists x \in X,\ x \preceq y \} \).
+
+Quando \( X = \{x\} \) é unitário, \( \downarrow x \) e \( \uparrow x \) são chamados de *downset principal* e *upset principal*, respectivamente. Um subconjunto \( D \subseteq S \) é fechado para baixo (*downset*) se, e somente se, \( \downarrow D = D \).
+
+#+begin_src rust
+impl<T: Eq + Hash + Clone> PreorderSet<T> {
+    pub fn principal_downset(&self, x: &T) -> HashSet<T> {
+        self.relation()
+            .domain
+            .iter()
+            .filter(|y| self.le(y, x))
+            .cloned()
+            .collect()
+    }
+
+    pub fn principal_upset(&self, x: &T) -> HashSet<T> {
+        self.relation()
+            .domain
+            .iter()
+            .filter(|y| self.le(x, y))
+            .cloned()
+            .collect()
+    }
+
+    pub fn downset(&self, subset: &HashSet<T>) -> HashSet<T> {
+        self.relation()
+            .domain
+            .iter()
+            .filter(|y| subset.iter().any(|x| self.le(y, x)))
+            .cloned()
+            .collect()
+    }
+
+    pub fn upset(&self, subset: &HashSet<T>) -> HashSet<T> {
+        self.relation()
+            .domain
+            .iter()
+            .filter(|y| subset.iter().any(|x| self.le(x, y)))
+            .cloned()
+            .collect()
+    }
+
+    pub fn is_downset(&self, subset: &HashSet<T>) -> bool {
+        subset.is_subset(&self.relation().domain) && self.downset(subset) == *subset
+    }
+
+    pub fn is_upset(&self, subset: &HashSet<T>) -> bool {
+        subset.is_subset(&self.relation().domain) && self.upset(subset) == *subset
+    }
+}
+#+end_src
+
+** Quociente Poset (\( P / {\sim} \))
+A construção fundamental que conecta pré-ordens a ordens parciais é o *quociente pela equivalência induzida* (\( x \sim y \iff x \preceq y \land y \preceq x \)).
+
+Ao particionar \( S \) em suas classes de equivalência \( [x] = \{ y \in S \mid x \sim y \} \), a relação induzida no conjunto quociente \( S / {\sim} \):
+
+$$[x] \le [y] \iff x \preceq y$$
+
+é bem definida (independe da escolha dos representantes \( x, y \)) e satisfaz a antissimetria: se \( [x] \le [y] \) e \( [y] \le [x] \), então \( x \sim y \), logo \( [x] = [y] \). Categoricamente, essa construção é o *funtor de reflexão* \( \mathbf{Preord} \to \mathbf{Poset} \), extraindo o esqueleto da pré-ordem.
+
+Em Rust, utilizamos ~BTreeSet<T>~ para representar cada classe de equivalência de forma canônica e determinística (garantindo a implementação de ~Hash~ e ~Eq~ exigida por ~PartialOrderSet~).
+
+#+begin_src rust
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct EquivalenceClass<T: Ord>(pub BTreeSet<T>);
+
+impl<T: Ord + Hash + Clone> PreorderSet<T> {
+    pub fn quotient(&self) -> PartialOrderSet<EquivalenceClass<T>> {
+        let mut q_domain = HashSet::new();
+
+        for x in &self.relation().domain {
+            let members: BTreeSet<T> = self.equivalence_class(x).into_iter().collect();
+            q_domain.insert(EquivalenceClass(members));
+        }
+
+        let mut q_pairs = HashSet::new();
+        for c1 in &q_domain {
+            let r1 = c1.0.first().expect("classe de equivalência não vazia");
+            for c2 in &q_domain {
+                let r2 = c2.0.first().expect("classe de equivalência não vazia");
+                if self.le(r1, r2) {
+                    q_pairs.insert((c1.clone(), c2.clone()));
+                }
+            }
+        }
+
+        PartialOrderSet::try_from(Relation {
+            domain: q_domain,
+            pairs: q_pairs,
+        })
+        .expect("o quociente de uma pré-ordem por ~ é sempre uma ordem parcial")
+    }
+}
+#+end_src
+
+** Cotas, Ínfimo (/Meet/) e Supremo (/Join/)
+Dado um subconjunto \( X \subseteq S \) em uma pré-ordem \( (S, \preceq) \):
+
+- *Cotas inferiores:* \( \text{LB}(X) = \{ b \in S \mid \forall x \in X,\ b \preceq x \} \).
+- *Cotas superiores:* \( \text{UB}(X) = \{ b \in S \mid \forall x \in X,\ x \preceq b \} \).
+- *Ínfimos (/meets*, \( \bigwedge X \)):* elementos \( m \in \text{LB}(X) \) tais que \( \forall b \in \text{LB}(X),\ b \preceq m \).
+- *Supremos (/joins*, \( \bigvee X \)):* elementos \( j \in \text{UB}(X) \) tais que \( \forall b \in \text{UB}(X),\ j \preceq b \).
+
+Diferentemente de uma ordem parcial — onde o ínfimo e o supremo, quando existem, são únicos —, em uma pré-ordem geral eles são únicos *a menos de equivalência (\( \sim \))*: se \( m_1 \) e \( m_2 \) são ínfimos de \( X \), então \( m_1 \preceq m_2 \) e \( m_2 \preceq m_1 \), formando uma única classe de equivalência.
+
+#+begin_src rust
+impl<T: Eq + Hash + Clone> PreorderSet<T> {
+    pub fn lower_bounds(&self, subset: &HashSet<T>) -> HashSet<T> {
+        self.relation()
+            .domain
+            .iter()
+            .filter(|b| subset.iter().all(|x| self.le(b, x)))
+            .cloned()
+            .collect()
+    }
+
+    pub fn upper_bounds(&self, subset: &HashSet<T>) -> HashSet<T> {
+        self.relation()
+            .domain
+            .iter()
+            .filter(|b| subset.iter().all(|x| self.le(x, b)))
+            .cloned()
+            .collect()
+    }
+
+    pub fn meets(&self, subset: &HashSet<T>) -> HashSet<T> {
+        let lb = self.lower_bounds(subset);
+        lb.iter()
+            .filter(|m| lb.iter().all(|b| self.le(b, m)))
+            .cloned()
+            .collect()
+    }
+
+    pub fn joins(&self, subset: &HashSet<T>) -> HashSet<T> {
+        let ub = self.upper_bounds(subset);
+        ub.iter()
+            .filter(|j| ub.iter().all(|b| self.le(j, b)))
+            .cloned()
+            .collect()
+    }
+}
+#+end_src
+
+** Instâncias Concretas do Traço =Preorder=
+Dois modelos canônicos ilustram pré-ordens genuínas (nas quais a antissimetria falha, gerando classes de equivalência não triviais):
+
+1. *Divisibilidade nos inteiros (\( a \preceq b \iff a \mid b \)):* como \( 3 \mid -3 \) e \( -3 \mid 3 \), tem-se \( 3 \sim -3 \) com \( 3 \neq -3 \). Além disso, \( 0 \) é o elemento máximo (\( \forall a \in \mathbb{Z},\ a \mid 0 \)) e \( \pm 1 \) são os elementos mínimos (\( \pm 1 \mid a \)).
+2. *Pré-ordem induzida por projeção (/pullback*):* dada uma função \( f: A \to B \) para um tipo ordenado, \( a_1 \preceq a_2 \iff f(a_1) \le f(a_2) \). Elementos distintos com a mesma chave são equivalentes (\( a_1 \sim a_2 \)).
+
+#+begin_src rust
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Divisibility(pub i64);
+
+impl Preorder for Divisibility {
+    fn le(&self, other: &Self) -> bool {
+        match (self.0, other.0) {
+            (_, 0) => true,
+            (0, _) => false,
+            (a, b) => b % a == 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ByKey<T, K, F> {
+    pub value: T,
+    pub key_fn: F,
+    _marker: std::marker::PhantomData<K>,
+}
+
+impl<T, K, F> ByKey<T, K, F>
+where
+    F: Fn(&T) -> K,
+{
+    pub fn new(value: T, key_fn: F) -> Self {
+        Self {
+            value,
+            key_fn,
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<T, K, F> Preorder for ByKey<T, K, F>
+where
+    K: Ord,
+    F: Fn(&T) -> K,
+{
+    fn le(&self, other: &Self) -> bool {
+        (self.key_fn)(&self.value) <= (self.key_fn)(&other.value)
+    }
+}
+#+end_src
+
+** Representações
+*** =Display=
+#+begin_src rust
+impl<T: fmt::Display> fmt::Display for Dual<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Dual({})", self.0)
+    }
+}
+
+impl<T: Ord + fmt::Display> fmt::Display for EquivalenceClass<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[")?;
+        for (i, item) in self.0.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{}", item)?;
+        }
+        write!(f, "]")
+    }
+}
+
+impl fmt::Display for Divisibility {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+#+end_src

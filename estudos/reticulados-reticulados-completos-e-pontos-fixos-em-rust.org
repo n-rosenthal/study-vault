@@ -1,0 +1,653 @@
+:PROPERTIES:
+:ID:       rust-imple--lattices
+:END:
+#+TITLE: Reticulados, Reticulados Completos e Pontos Fixos em Rust
+#+DATE: [2026-11-26 qui]
+#+DESCRIPTION: Implementação de reticulados, reticulados distributivos, Teorema de Representação de Birkhoff e Teorema do Ponto Fixo de Knaster-Tarski
+#+STATUS: semente
+#+NOTE_TYPE: estudo
+#+FILETAGS: :rust:implementation:publish:estudo:
+#+PROPERTY: header-args:rust :tangle src/lattices.rs :mkdirp yes
+
+* Implementação
+
+Este módulo aprofunda o estudo das ordens parciais introduzindo *reticulados* (/lattices/), *reticulados completos*, a representação de Birkhoff via conjuntos inferiores e o *Teorema do Ponto Fixo de Knaster-Tarski*, fundamental para semântica denotacional, análise de fluxo de dados e lógica modal.
+
+** Importações
+#+begin_src rust
+use std::collections::{BTreeSet, HashSet};
+use std::error::Error;
+use std::fmt;
+use std::hash::Hash;
+
+use crate::morphisms::MonotoneMap;
+use crate::{OrderError, PartialOrderSet, PreorderSet, Relation};
+#+end_src
+
+** Fundamentos e Erros
+Seja \( (L, \le) \) uma ordem parcial:
+
+1. *Reticulado (/Lattice/):* \( (L, \le) \) é um reticulado se todo par de elementos \( x, y \in L \) possui um único *ínfimo* (/meet*, \( x \wedge y = \bigwedge \{x, y\} \)) e um único *supremo* (/join*, \( x \vee y = \bigvee \{x, y\} \)).
+2. *Reticulado Distributivo:* um reticulado que satisfaz a identidade distributiva:
+   $$\forall x, y, z \in L,\quad x \wedge (y \vee z) = (x \wedge y) \vee (x \wedge z)$$
+3. *Reticulado Completo (/Complete Lattice/):* todo subconjunto arbitrário \( X \subseteq L \) (incluindo \( X = \emptyset \) e \( X = L \)) possui um único ínfimo \( \bigwedge X \) e um único supremo \( \bigvee X \). Em particular:
+   - Elemento mínimo global: \( \bot = \bigvee \emptyset = \bigwedge L \).
+   - Elemento máximo global: \( \top = \bigwedge \emptyset = \bigvee L \).
+   Todo reticulado finito *não vazio* é automaticamente completo; um reticulado vazio falha na completude por não possuir \( \bot \) nem \( \top \).
+
+As condições de erro capturam violações dessas propriedades estruturais:
+
+1. =Erro= ~Order(OrderError)~: a relação subjacente não é sequer uma ordem parcial.
+2. =Erro= ~MissingMeet~: existem \( x, y \in L \) sem ínfimo \( x \wedge y \).
+3. =Erro= ~MissingJoin~: existem \( x, y \in L \) sem supremo \( x \vee y \).
+4. =Erro= ~NotComplete~: existe \( X \subseteq L \) sem \( \bigwedge X \) ou \( \bigvee X \) (por exemplo, domínio vazio).
+5. =Erro= ~DistributivityViolated~: existe tripla \( (x, y, z) \) que viola a distributividade.
+6. =Erro= ~NotAnEndomorphism~: o morfismo monótono \( f: A \to B \) não possui \( A = B = L \).
+
+#+begin_src rust
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LatticeError {
+    Order(OrderError),
+    MissingMeet,
+    MissingJoin,
+    NotComplete,
+    DistributivityViolated,
+    NotAnEndomorphism,
+}
+
+impl From<OrderError> for LatticeError {
+    fn from(err: OrderError) -> Self {
+        LatticeError::Order(err)
+    }
+}
+
+impl fmt::Display for LatticeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            LatticeError::Order(err) => write!(f, "{}", err),
+            LatticeError::MissingMeet => {
+                write!(f, "invalid lattice: pair of elements lacks a unique meet")
+            }
+            LatticeError::MissingJoin => {
+                write!(f, "invalid lattice: pair of elements lacks a unique join")
+            }
+            LatticeError::NotComplete => {
+                write!(f, "invalid complete lattice: subset lacks a unique infimum or supremum")
+            }
+            LatticeError::DistributivityViolated => {
+                write!(f, "invalid distributive lattice: distributivity law violated")
+            }
+            LatticeError::NotAnEndomorphism => {
+                write!(f, "fixed point requires an endomorphism f: L -> L over the same lattice")
+            }
+        }
+    }
+}
+
+impl Error for LatticeError {}
+#+end_src
+
+** Traço =Lattice= e Reticulados Finitos (=LatticeSet=)
+Do ponto de vista algébrico, um reticulado pode ser caracterizado tanto pela ordem \( (L, \le) \) quanto por duas operações binárias comutativas, associativas e idempotentes \( (\wedge, \vee) \) ligadas pelas *leis de absorção*:
+
+$$x \wedge (x \vee y) = x \qquad\text{e}\qquad x \vee (x \wedge y) = x$$
+
+A ordem parcial é então recuperada por \( x \le y \iff x \wedge y = x \iff x \vee y = y \).
+
+#+begin_src rust
+pub trait Lattice: Eq + Clone {
+    fn meet(&self, other: &Self) -> Self;
+    fn join(&self, other: &Self) -> Self;
+
+    fn lattice_le(&self, other: &Self) -> bool {
+        &self.meet(other) == self
+    }
+}
+
+pub trait BoundedLattice: Lattice {
+    fn bottom() -> Self;
+    fn top() -> Self;
+}
+
+impl<T: Ord + Clone> Lattice for BTreeSet<T> {
+    fn meet(&self, other: &Self) -> Self {
+        self.intersection(other).cloned().collect()
+    }
+
+    fn join(&self, other: &Self) -> Self {
+        self.union(other).cloned().collect()
+    }
+}
+
+impl Lattice for bool {
+    fn meet(&self, other: &Self) -> Self {
+        *self && *other
+    }
+
+    fn join(&self, other: &Self) -> Self {
+        *self || *other
+    }
+}
+
+impl BoundedLattice for bool {
+    fn bottom() -> Self {
+        false
+    }
+
+    fn top() -> Self {
+        true
+    }
+}
+#+end_src
+
+Para ordens parciais finitas construídas dinamicamente via ~PartialOrderSet<T>~, estendemos o cálculo de cotas, ínfimos e supremos e promovemos a estrutura para ~LatticeSet<T>~ mediante validação de existência única de \( x \wedge y \) e \( x \vee y \) para todos os pares \( x, y \in L \).
+
+#+begin_src rust
+impl<T: Eq + Hash + Clone> PartialOrderSet<T> {
+    pub fn lower_bounds(&self, subset: &HashSet<T>) -> HashSet<T> {
+        let rel = self.relation();
+        rel.domain
+            .iter()
+            .filter(|b| subset.iter().all(|x| rel.holds(b, x)))
+            .cloned()
+            .collect()
+    }
+
+    pub fn upper_bounds(&self, subset: &HashSet<T>) -> HashSet<T> {
+        let rel = self.relation();
+        rel.domain
+            .iter()
+            .filter(|b| subset.iter().all(|x| rel.holds(x, b)))
+            .cloned()
+            .collect()
+    }
+
+    pub fn meets(&self, subset: &HashSet<T>) -> HashSet<T> {
+        let rel = self.relation();
+        let lb = self.lower_bounds(subset);
+        lb.iter()
+            .filter(|m| lb.iter().all(|b| rel.holds(b, m)))
+            .cloned()
+            .collect()
+    }
+
+    pub fn joins(&self, subset: &HashSet<T>) -> HashSet<T> {
+        let rel = self.relation();
+        let ub = self.upper_bounds(subset);
+        ub.iter()
+            .filter(|j| ub.iter().all(|b| rel.holds(j, b)))
+            .cloned()
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LatticeSet<T: Eq + Hash> {
+    poset: PartialOrderSet<T>,
+}
+
+impl<T: Eq + Hash + Clone> TryFrom<PartialOrderSet<T>> for LatticeSet<T> {
+    type Error = LatticeError;
+
+    fn try_from(poset: PartialOrderSet<T>) -> Result<Self, Self::Error> {
+        let domain = &poset.relation().domain;
+        for x in domain {
+            for y in domain {
+                let pair = HashSet::from([x.clone(), y.clone()]);
+                if poset.meets(&pair).len() != 1 {
+                    return Err(LatticeError::MissingMeet);
+                }
+                if poset.joins(&pair).len() != 1 {
+                    return Err(LatticeError::MissingJoin);
+                }
+            }
+        }
+        Ok(Self { poset })
+    }
+}
+
+impl<T: Eq + Hash + Clone> TryFrom<Relation<T>> for LatticeSet<T> {
+    type Error = LatticeError;
+
+    fn try_from(relation: Relation<T>) -> Result<Self, Self::Error> {
+        let poset = PartialOrderSet::try_from(relation)?;
+        Self::try_from(poset)
+    }
+}
+
+impl<T: Eq + Hash + Clone> LatticeSet<T> {
+    pub fn poset(&self) -> &PartialOrderSet<T> {
+        &self.poset
+    }
+
+    pub fn relation(&self) -> &Relation<T> {
+        self.poset.relation()
+    }
+
+    pub fn le(&self, left: &T, right: &T) -> bool {
+        self.poset.relation().holds(left, right)
+    }
+
+    pub fn meet(&self, a: &T, b: &T) -> Option<T> {
+        let pair = HashSet::from([a.clone(), b.clone()]);
+        self.poset.meets(&pair).into_iter().next()
+    }
+
+    pub fn join(&self, a: &T, b: &T) -> Option<T> {
+        let pair = HashSet::from([a.clone(), b.clone()]);
+        self.poset.joins(&pair).into_iter().next()
+    }
+
+    pub fn is_distributive(&self) -> bool {
+        let domain = &self.relation().domain;
+        for x in domain {
+            for y in domain {
+                for z in domain {
+                    let y_join_z = match self.join(y, z) {
+                        Some(v) => v,
+                        None => return false,
+                    };
+                    let lhs = self.meet(x, &y_join_z);
+
+                    let x_meet_y = match self.meet(x, y) {
+                        Some(v) => v,
+                        None => return false,
+                    };
+                    let x_meet_z = match self.meet(x, z) {
+                        Some(v) => v,
+                        None => return false,
+                    };
+                    let rhs = self.join(&x_meet_y, &x_meet_z);
+
+                    if lhs != rhs {
+                        return false;
+                    }
+                }
+            }
+        }
+        true
+    }
+}
+#+end_src
+
+** Reticulados Completos e Teorema de Representação de Birkhoff
+Um reticulado completo ~CompleteLatticeSet<T>~ garante a existência de \( \bot \), \( \top \), \( \bigwedge X \) e \( \bigvee X \) para todo \( X \subseteq L \), além de permitir testar se um elemento \( x \in L \) possui *complemento* \( y \in L \) (\( x \wedge y = \bot \) e \( x \vee y = \top \)).
+
+Pelo *Teorema de Representação de Birkhoff*, toda ordem parcial finita \( P \) determina um reticulado completo distributivo \( \mathcal{O}(P) \) formado por todos os seus conjuntos inferiores (*downsets*) ordenados por inclusão \( \subseteq \), e reciprocamente todo reticulado distributivo finito é isomorfo a \( \mathcal{O}(J(L)) \), onde \( J(L) \) é o poset dos elementos *join-irredutíveis* de \( L \).
+
+#+begin_src rust
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompleteLatticeSet<T: Eq + Hash> {
+    lattice: LatticeSet<T>,
+    bottom: T,
+    top: T,
+}
+
+impl<T: Eq + Hash + Clone> TryFrom<LatticeSet<T>> for CompleteLatticeSet<T> {
+    type Error = LatticeError;
+
+    fn try_from(lattice: LatticeSet<T>) -> Result<Self, Self::Error> {
+        let empty = HashSet::new();
+        let bottom = lattice
+            .poset()
+            .joins(&empty)
+            .into_iter()
+            .next()
+            .ok_or(LatticeError::NotComplete)?;
+        let top = lattice
+            .poset()
+            .meets(&empty)
+            .into_iter()
+            .next()
+            .ok_or(LatticeError::NotComplete)?;
+
+        Ok(Self {
+            lattice,
+            bottom,
+            top,
+        })
+    }
+}
+
+impl<T: Eq + Hash + Clone> TryFrom<PartialOrderSet<T>> for CompleteLatticeSet<T> {
+    type Error = LatticeError;
+
+    fn try_from(poset: PartialOrderSet<T>) -> Result<Self, Self::Error> {
+        let lattice = LatticeSet::try_from(poset)?;
+        Self::try_from(lattice)
+    }
+}
+
+impl<T: Eq + Hash + Clone> TryFrom<Relation<T>> for CompleteLatticeSet<T> {
+    type Error = LatticeError;
+
+    fn try_from(relation: Relation<T>) -> Result<Self, Self::Error> {
+        let lattice = LatticeSet::try_from(relation)?;
+        Self::try_from(lattice)
+    }
+}
+
+impl<T: Eq + Hash + Clone> CompleteLatticeSet<T> {
+    pub fn lattice(&self) -> &LatticeSet<T> {
+        &self.lattice
+    }
+
+    pub fn poset(&self) -> &PartialOrderSet<T> {
+        self.lattice.poset()
+    }
+
+    pub fn relation(&self) -> &Relation<T> {
+        self.lattice.relation()
+    }
+
+    pub fn le(&self, left: &T, right: &T) -> bool {
+        self.lattice.le(left, right)
+    }
+
+    pub fn bottom(&self) -> &T {
+        &self.bottom
+    }
+
+    pub fn top(&self) -> &T {
+        &self.top
+    }
+
+    pub fn infimum(&self, subset: &HashSet<T>) -> Option<T> {
+        let meets = self.poset().meets(subset);
+        if meets.len() == 1 {
+            meets.into_iter().next()
+        } else {
+            None
+        }
+    }
+
+    pub fn supremum(&self, subset: &HashSet<T>) -> Option<T> {
+        let joins = self.poset().joins(subset);
+        if joins.len() == 1 {
+            joins.into_iter().next()
+        } else {
+            None
+        }
+    }
+
+    pub fn complements(&self, x: &T) -> HashSet<T> {
+        self.relation()
+            .domain
+            .iter()
+            .filter(|y| {
+                self.lattice.meet(x, y).as_ref() == Some(&self.bottom)
+                    && self.lattice.join(x, y).as_ref() == Some(&self.top)
+            })
+            .cloned()
+            .collect()
+    }
+
+    pub fn is_boolean_algebra(&self) -> bool {
+        self.lattice.is_distributive()
+            && self
+                .relation()
+                .domain
+                .iter()
+                .all(|x| !self.complements(x).is_empty())
+    }
+
+    pub fn as_preorder(&self) -> PreorderSet<T> {
+        PreorderSet::try_from(self.relation().clone())
+            .expect("todo reticulado completo é uma pré-ordem")
+    }
+}
+
+impl<T: Ord + Hash + Clone> PartialOrderSet<T> {
+    pub fn downsets(&self) -> Vec<BTreeSet<T>> {
+        let elems: Vec<T> = self.relation().domain.iter().cloned().collect();
+        let preorder = PreorderSet::try_from(self.relation().clone())
+            .expect("toda ordem parcial é uma pré-ordem");
+
+        let mut result = Vec::new();
+        let total = 1_usize << elems.len();
+        for mask in 0..total {
+            let mut candidate = HashSet::new();
+            for (i, item) in elems.iter().enumerate() {
+                if (mask & (1 << i)) != 0 {
+                    candidate.insert(item.clone());
+                }
+            }
+            if preorder.is_downset(&candidate) {
+                result.push(candidate.into_iter().collect());
+            }
+        }
+        result
+    }
+
+    pub fn downset_lattice(&self) -> CompleteLatticeSet<BTreeSet<T>> {
+        let downsets = self.downsets();
+        let mut relation = Relation::new();
+
+        for d in &downsets {
+            relation.insert_element(d.clone());
+        }
+        for d1 in &downsets {
+            for d2 in &downsets {
+                if d1.is_subset(d2) {
+                    relation
+                        .relate(d1.clone(), d2.clone())
+                        .expect("downsets pertencem ao domínio");
+                }
+            }
+        }
+
+        CompleteLatticeSet::try_from(relation)
+            .expect("o conjunto de downsets O(P) é sempre um reticulado completo distributivo")
+    }
+}
+#+end_src
+
+** Teorema do Ponto Fixo de Knaster-Tarski
+Seja \( (L, \le) \) um reticulado completo e \( f: L \to L \) um endomorfismo monótono (\( x \le y \implies f(x) \le f(y) \)). O *Teorema de Knaster-Tarski* afirma que o conjunto dos pontos fixos:
+
+$$\text{Fix}(f) = \{ x \in L \mid f(x) = x \}$$
+
+é **não vazio** e forma, ele próprio, um **reticulado completo** sob a ordem induzida de \( L \) (atenção: \( \text{Fix}(f) \) nem sempre é um *sub-reticulado* de \( L \), pois o supremo tomado dentro de \( \text{Fix}(f) \) pode ser estritamente maior que o supremo calculado em \( L \)).
+
+Em particular, os pontos fixos extremos admitem caracterizações fechadas a partir dos conjuntos de *pré-pontos fixos* (\( f(x) \le x \)) e *pós-pontos fixos* (\( x \le f(x) \)):
+
+- *Menor ponto fixo (\( \mu f \)):* \( \mu f = \bigwedge \{ x \in L \mid f(x) \le x \} \).
+- *Maior ponto fixo (\( \nu f \)):* \( \nu f = \bigvee \{ x \in L \mid x \le f(x) \} \).
+
+#+begin_src rust
+impl<T: Eq + Hash + Clone> CompleteLatticeSet<T> {
+    fn check_endomorphism(&self, f: &MonotoneMap<T, T>) -> Result<(), LatticeError> {
+        let expected = self.as_preorder();
+        if f.source() != &expected || f.target() != &expected {
+            return Err(LatticeError::NotAnEndomorphism);
+        }
+        Ok(())
+    }
+
+    pub fn pre_fixed_points(
+        &self,
+        f: &MonotoneMap<T, T>,
+    ) -> Result<HashSet<T>, LatticeError> {
+        self.check_endomorphism(f)?;
+        Ok(self
+            .relation()
+            .domain
+            .iter()
+            .filter(|x| {
+                let fx = f.apply(x).expect("elemento pertence ao domínio");
+                self.le(fx, x)
+            })
+            .cloned()
+            .collect())
+    }
+
+    pub fn post_fixed_points(
+        &self,
+        f: &MonotoneMap<T, T>,
+    ) -> Result<HashSet<T>, LatticeError> {
+        self.check_endomorphism(f)?;
+        Ok(self
+            .relation()
+            .domain
+            .iter()
+            .filter(|x| {
+                let fx = f.apply(x).expect("elemento pertence ao domínio");
+                self.le(x, fx)
+            })
+            .cloned()
+            .collect())
+    }
+
+    pub fn fixed_points(&self, f: &MonotoneMap<T, T>) -> Result<HashSet<T>, LatticeError> {
+        self.check_endomorphism(f)?;
+        Ok(self
+            .relation()
+            .domain
+            .iter()
+            .filter(|x| f.apply(x) == Some(*x))
+            .cloned()
+            .collect())
+    }
+
+    pub fn least_fixed_point(&self, f: &MonotoneMap<T, T>) -> Result<T, LatticeError> {
+        let pre = self.pre_fixed_points(f)?;
+        Ok(self
+            .infimum(&pre)
+            .expect("pelo Teorema de Knaster-Tarski, o menor ponto fixo sempre existe"))
+    }
+
+    pub fn greatest_fixed_point(&self, f: &MonotoneMap<T, T>) -> Result<T, LatticeError> {
+        let post = self.post_fixed_points(f)?;
+        Ok(self
+            .supremum(&post)
+            .expect("pelo Teorema de Knaster-Tarski, o maior ponto fixo sempre existe"))
+    }
+
+    pub fn fixed_point_lattice(
+        &self,
+        f: &MonotoneMap<T, T>,
+    ) -> Result<CompleteLatticeSet<T>, LatticeError> {
+        let fps = self.fixed_points(f)?;
+        let mut rel = Relation::new();
+
+        for x in &fps {
+            rel.insert_element(x.clone());
+        }
+        for x in &fps {
+            for y in &fps {
+                if self.le(x, y) {
+                    rel.relate(x.clone(), y.clone())?;
+                }
+            }
+        }
+
+        CompleteLatticeSet::try_from(rel)
+    }
+}
+#+end_src
+
+** Representações
+*** =Display=
+#+begin_src rust
+impl<T: Eq + Hash + fmt::Display> fmt::Display for LatticeSet<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.poset)
+    }
+}
+
+impl<T: Eq + Hash + fmt::Display> fmt::Display for CompleteLatticeSet<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "CompleteLattice (bottom = {}, top = {}):", self.bottom, self.top)?;
+        write!(f, "{}", self.lattice)
+    }
+}
+#+end_src
+
+** Suíte de Verificação (=cargo test=)
+#+begin_src rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_non_lattice_poset_rejected() {
+        // Poset "borboleta" (crown): a < c, a < d, b < c, b < d (sem supremo único para {a, b})
+        let mut rel = Relation::new();
+        for x in ["a", "b", "c", "d"] {
+            rel.insert_element(x);
+            rel.relate(x, x).unwrap();
+        }
+        rel.relate("a", "c").unwrap();
+        rel.relate("a", "d").unwrap();
+        rel.relate("b", "c").unwrap();
+        rel.relate("b", "d").unwrap();
+
+        let poset = PartialOrderSet::try_from(rel).unwrap();
+        assert_eq!(LatticeSet::try_from(poset), Err(LatticeError::MissingJoin));
+    }
+
+    #[test]
+    fn test_birkhoff_downset_lattice() {
+        // Poset em V: 1 < 2 e 1 < 3 (2 e 3 incomparáveis)
+        // Downsets O(P): {}, {1}, {1, 2}, {1, 3}, {1, 2, 3} -> 5 elementos
+        let mut rel = Relation::new();
+        for x in [1_u8, 2, 3] {
+            rel.insert_element(x);
+            rel.relate(x, x).unwrap();
+        }
+        rel.relate(1, 2).unwrap();
+        rel.relate(1, 3).unwrap();
+
+        let poset = PartialOrderSet::try_from(rel).unwrap();
+        let birkhoff = poset.downset_lattice();
+
+        assert_eq!(birkhoff.relation().domain.len(), 5);
+        assert_eq!(birkhoff.bottom(), &BTreeSet::new());
+        assert_eq!(birkhoff.top(), &BTreeSet::from([1, 2, 3]));
+        assert!(birkhoff.lattice().is_distributive());
+        // Não é álgebra booleana pois {1} não possui complemento
+        assert!(!birkhoff.is_boolean_algebra());
+    }
+
+    #[test]
+    fn test_knaster_tarski_fixed_points() {
+        // Reticulado completo das partes de {0, 1, 2} (álgebra booleana de 8 elementos)
+        let mut rel = Relation::new();
+        for x in [0_u8, 1, 2] {
+            rel.insert_element(x);
+            rel.relate(x, x).unwrap();
+        }
+        let discrete = PartialOrderSet::try_from(rel).unwrap();
+        let powerset = discrete.downset_lattice();
+        assert!(powerset.is_boolean_algebra());
+
+        // Operador monótono f(S) = {0} U (S trazido de 1 -> 2), simulando alcançabilidade
+        let preorder = powerset.as_preorder();
+        let mut mapping = HashMap::new();
+        for s in &powerset.relation().domain {
+            let mut next = BTreeSet::from([0_u8]);
+            if s.contains(&1) {
+                next.insert(2);
+            }
+            if s.contains(&2) {
+                next.insert(2);
+            }
+            mapping.insert(s.clone(), next);
+        }
+
+        let f = MonotoneMap::new(preorder.clone(), preorder, mapping).unwrap();
+
+        // Pontos fixos: {0} e {0, 2}
+        let lfp = powerset.least_fixed_point(&f).unwrap();
+        let gfp = powerset.greatest_fixed_point(&f).unwrap();
+        let fix_lattice = powerset.fixed_point_lattice(&f).unwrap();
+
+        assert_eq!(lfp, BTreeSet::from([0]));
+        assert_eq!(gfp, BTreeSet::from([0, 2]));
+        assert_eq!(fix_lattice.relation().domain.len(), 2);
+        assert_eq!(fix_lattice.bottom(), &BTreeSet::from([0]));
+        assert_eq!(fix_lattice.top(), &BTreeSet::from([0, 2]));
+    }
+}
+#+end_src

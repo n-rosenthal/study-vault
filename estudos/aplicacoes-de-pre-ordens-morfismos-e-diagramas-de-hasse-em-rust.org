@@ -1,0 +1,452 @@
+:PROPERTIES:
+:ID:       rust-imple--preorder-applications
+:END:
+#+TITLE: Aplicações de Pré-ordens, Morfismos e Diagramas de Hasse em Rust
+#+DATE: [2026-11-26 qui]
+#+DESCRIPTION: Estudo aplicado integrando grafos de dependências, reticulados de divisibilidade, interpretação abstrata via conexões de Galois e triagem multicritério
+#+STATUS: semente
+#+NOTE_TYPE: estudo
+#+FILETAGS: :rust:implementation:publish:estudo:
+#+PROPERTY: header-args:rust :tangle src/applications.rs :mkdirp yes
+
+* Aplicações Integradas
+
+Este estudo reúne quatro domínios práticos que exercitam todo o ecossistema construído nos módulos anteriores (~lib.rs~, ~operations.rs~, ~morphisms.rs~ e ~hasse.rs~), conectando teoria da ordem, análise estática e algoritmos em grafos.
+
+** Importações
+#+begin_src rust
+use std::collections::{BTreeSet, HashMap, HashSet};
+
+use crate::hasse::HasseDiagram;
+use crate::morphisms::{GaloisConnection, MonotoneMap};
+use crate::operations::{ByKey, Divisibility, Dual, EquivalenceClass};
+use crate::{OrderError, PartialOrderSet, Preorder, PreorderSet, Relation};
+#+end_src
+
+** Aplicação 1: Resolução de Dependências e Detecção de Ciclos Mútuos
+Considere um sistema de compilação ou gerenciador de pacotes em que uma aresta direcionada \( u \to v \) significa *"\( u \) deve ser compilado antes de \( v \)"* (isto é, \( v \) depende de \( u \)).
+
+Ao tomar o fecho reflexivo-transitivo \( (\preceq_G) = E^* \):
+
+1. *Análise de impacto (\(\uparrow u\)):* o *upset* principal de um módulo \( u \) identifica todos os módulos direta ou indiretamente afetados por uma alteração em \( u \).
+2. *Dependências transitivas (\(\downarrow v\)):* o *downset* principal de \( v \) fornece o conjunto exato de pré-requisitos necessários para compilar \( v \).
+3. *Recursão mútua (SCCs):* módulos mutuamente dependentes (\( u \preceq_G v \land v \preceq_G u \)) formam uma classe de equivalência \( [u] \in V / {\sim} \), detectada via ~strongly_connected_components~.
+4. *Grafo mínimo de compilação (Diagrama de Hasse):* a condensação seguida da redução transitiva elimina dependências redundantes e produz a ordem de compilação via extensão linear.
+
+#+begin_src rust
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BuildPlanReport {
+    pub transitive_deps_of_cli: HashSet<&'static str>,
+    pub impact_of_core: HashSet<&'static str>,
+    pub cyclic_clusters: Vec<EquivalenceClass<&'static str>>,
+    pub hasse: HasseDiagram<EquivalenceClass<&'static str>>,
+    pub build_sequence: Vec<EquivalenceClass<&'static str>>,
+}
+
+pub fn analyze_build_dependencies() -> BuildPlanReport {
+    let modules = ["core", "lexer", "parser", "ast", "typeck", "codegen", "cli"];
+    let dependencies = [
+        ("core", "lexer"),
+        ("core", "ast"),
+        ("core", "typeck"),
+        ("lexer", "parser"),
+        // Recursão mútua entre parser e ast
+        ("parser", "ast"),
+        ("ast", "parser"),
+        // Dependências transitivas redundantes e diretas
+        ("parser", "typeck"),
+        ("ast", "typeck"),
+        ("typeck", "codegen"),
+        ("codegen", "cli"),
+        ("core", "cli"), // atalho transitivo redundante
+    ];
+
+    let reachability = PreorderSet::from_directed_graph(modules, dependencies);
+
+    let transitive_deps_of_cli = reachability.principal_downset(&"cli");
+    let impact_of_core = reachability.principal_upset(&"core");
+
+    let cyclic_clusters: Vec<EquivalenceClass<&'static str>> = reachability
+        .strongly_connected_components()
+        .into_iter()
+        .filter(|scc| scc.0.len() > 1)
+        .collect();
+
+    let condensed_poset = reachability.condensation();
+    let hasse = condensed_poset.hasse_diagram();
+    let build_sequence = condensed_poset.topological_order();
+
+    BuildPlanReport {
+        transitive_deps_of_cli,
+        impact_of_core,
+        cyclic_clusters,
+        hasse,
+        build_sequence,
+    }
+}
+#+end_src
+
+** Aplicação 2: Reticulado de Divisibilidade nos Inteiros
+Sobre o conjunto de inteiros \( \mathbb{Z} \), a relação de divisibilidade \( a \preceq b \iff a \mid b \) é uma *pré-ordem genuína*, pois \( a \mid -a \) e \( -a \mid a \) implicam \( a \sim -a \) sem que \( a = -a \).
+
+Restringindo-se ao domínio finito \( S = \{ \pm 1, \pm 2, \pm 3, \pm 4, \pm 6, \pm 12 \} \):
+
+- Tentar construir diretamente um ~PartialOrderSet<i64>~ falha com ~OrderError::AntisymmetryViolated~.
+- Na pré-ordem ~PreorderSet<i64>~, o ínfimo (~meets~) de \( \{4, 6\} \) retorna a classe de equivalência \( \{-2, 2\} \) (o máximo divisor comum a menos de sinal) e o supremo (~joins~) retorna \( \{-12, 12\} \) (o mínimo múltiplo comum a menos de sinal).
+- Ao aplicar o quociente \( S / {\sim} \), obtém-se uma ordem parcial de \( 6 \) classes cujo Diagrama de Hasse possui exatamente \( 7 \) arestas de cobertura (correspondentes à multiplicação pelos fatores primos \( 2 \) e \( 3 \)).
+
+#+begin_src rust
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DivisibilityReport {
+    pub poset_attempt: Result<PartialOrderSet<i64>, OrderError>,
+    pub gcd_4_and_6: HashSet<i64>,
+    pub lcm_4_and_6: HashSet<i64>,
+    pub quotient_hasse: HasseDiagram<EquivalenceClass<i64>>,
+}
+
+pub fn analyze_divisibility_lattice() -> DivisibilityReport {
+    let domain = [-12, -6, -4, -3, -2, -1, 1, 2, 3, 4, 6, 12];
+    let mut relation = Relation::new();
+
+    for &x in &domain {
+        relation.insert_element(x);
+    }
+    for &a in &domain {
+        for &b in &domain {
+            if Divisibility(a).le(&Divisibility(b)) {
+                relation
+                    .relate(a, b)
+                    .expect("ambos os elementos pertencem ao domínio");
+            }
+        }
+    }
+
+    let poset_attempt = PartialOrderSet::try_from(relation.clone());
+    let preorder = PreorderSet::try_from(relation)
+        .expect("divisibilidade é reflexiva e transitiva");
+
+    let pair_4_6 = HashSet::from([4, 6]);
+    let gcd_4_and_6 = preorder.meets(&pair_4_6);
+    let lcm_4_and_6 = preorder.joins(&pair_4_6);
+    let quotient_hasse = preorder.hasse_diagram();
+
+    DivisibilityReport {
+        poset_attempt,
+        gcd_4_and_6,
+        lcm_4_and_6,
+        quotient_hasse,
+    }
+}
+#+end_src
+
+** Aplicação 3: Interpretação Abstrata e Análise de Sinais via Conexão de Galois
+Na verificação estática de programas, aproxima-se um domínio concreto de conjuntos de valores por um domínio abstrato finito usando uma *conexão de Galois* \( \alpha \dashv \gamma \):
+
+1. *Domínio concreto \( P = (\mathcal{P}(\{-1, 0, 1\}), \subseteq) \):* os \( 8 \) subconjuntos possíveis de valores concretos ordenados por inclusão.
+2. *Domínio abstrato \( Q = \{\bot, \text{Neg}, \text{Zero}, \text{Pos}, \top\} \):* reticulado plano com \( \bot \) na base, \( \top \) no topo e os três sinais atômicos incomparáveis entre si.
+3. *Abstração \( \alpha: P \to Q \) e Concretização \( \gamma: Q \to P \):* satisfazem a adjunção fundamental:
+   $$\forall S \in P,\ \forall q \in Q,\quad \alpha(S) \le_Q q \iff S \subseteq \gamma(q)$$
+
+O operador de fecho induzido \( c = \gamma \circ \alpha \) revela exatamente a perda de precisão da análise: por exemplo, o conjunto concreto \( \{-1, 1\} \) (valores não nulos) é abstraído para \( \top \) e concretizado para \( \{-1, 0, 1\} \), introduzindo \( 0 \) como falso positivo. Os conjuntos sem perda de precisão são precisamente os elementos fechados (~closed_elements~).
+
+#+begin_src rust
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Sign {
+    Bot,
+    Neg,
+    Zero,
+    Pos,
+    Top,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SignAnalysisReport {
+    pub connection: GaloisConnection<BTreeSet<i8>, Sign>,
+    pub closed_subsets: HashSet<BTreeSet<i8>>,
+    pub overapproximation_of_nonzero: BTreeSet<i8>,
+}
+
+pub fn build_sign_galois_connection() -> SignAnalysisReport {
+    let subsets = [
+        BTreeSet::new(),
+        BTreeSet::from([-1]),
+        BTreeSet::from([0]),
+        BTreeSet::from([1]),
+        BTreeSet::from([-1, 0]),
+        BTreeSet::from([-1, 1]),
+        BTreeSet::from([0, 1]),
+        BTreeSet::from([-1, 0, 1]),
+    ];
+
+    let mut concrete_rel = Relation::new();
+    for s in &subsets {
+        concrete_rel.insert_element(s.clone());
+    }
+    for s1 in &subsets {
+        for s2 in &subsets {
+            if s1.is_subset(s2) {
+                concrete_rel
+                    .relate(s1.clone(), s2.clone())
+                    .expect("subconjuntos pertencem ao domínio concreto");
+            }
+        }
+    }
+    let concrete = PreorderSet::try_from(concrete_rel)
+        .expect("inclusão de conjuntos é uma ordem parcial");
+
+    let signs = [Sign::Bot, Sign::Neg, Sign::Zero, Sign::Pos, Sign::Top];
+    let mut abstract_rel = Relation::new();
+    for &q in &signs {
+        abstract_rel.insert_element(q);
+    }
+    for &q1 in &signs {
+        for &q2 in &signs {
+            let le = q1 == Sign::Bot || q2 == Sign::Top || q1 == q2;
+            if le {
+                abstract_rel
+                    .relate(q1, q2)
+                    .expect("sinais pertencem ao domínio abstrato");
+            }
+        }
+    }
+    let abstract_domain = PreorderSet::try_from(abstract_rel)
+        .expect("domínio de sinais é um reticulado");
+
+    let mut alpha_map = HashMap::new();
+    for s in &subsets {
+        let sign = match s.len() {
+            0 => Sign::Bot,
+            1 if s.contains(&-1) => Sign::Neg,
+            1 if s.contains(&0) => Sign::Zero,
+            1 if s.contains(&1) => Sign::Pos,
+            _ => Sign::Top,
+        };
+        alpha_map.insert(s.clone(), sign);
+    }
+
+    let gamma_map = HashMap::from([
+        (Sign::Bot, BTreeSet::new()),
+        (Sign::Neg, BTreeSet::from([-1])),
+        (Sign::Zero, BTreeSet::from([0])),
+        (Sign::Pos, BTreeSet::from([1])),
+        (Sign::Top, BTreeSet::from([-1, 0, 1])),
+    ]);
+
+    let alpha = MonotoneMap::new(concrete.clone(), abstract_domain.clone(), alpha_map)
+        .expect("abstração alpha é monótona");
+    let gamma = MonotoneMap::new(abstract_domain, concrete, gamma_map)
+        .expect("concretização gamma é monótona");
+
+    let connection = GaloisConnection::new(alpha, gamma)
+        .expect("alpha e gamma formam uma conexão de Galois válida");
+
+    let closed_subsets = connection.closed_elements();
+    let closure = connection.closure_operator();
+    let nonzero = BTreeSet::from([-1, 1]);
+    let overapproximation_of_nonzero = closure
+        .apply(&nonzero)
+        .expect("{-1, 1} pertence ao domínio concreto")
+        .clone();
+
+    SignAnalysisReport {
+        connection,
+        closed_subsets,
+        overapproximation_of_nonzero,
+    }
+}
+#+end_src
+
+** Aplicação 4: Triagem Multicritério (Produto, Ordem Lexicográfica e Dualidade)
+Na priorização de tarefas de engenharia, cada tarefa \( t \) possui dois atributos: *severidade* \( s(t) \in \{1, 2, 3\} \) (quanto maior, mais urgente) e *esforço* \( e(t) \in \{1, 2, 5\} \) (quanto menor, mais desejável — modelado via ~Dual~).
+
+Comparando as duas construções de produto:
+
+1. *Produto cartesiano (\( \text{Severidade} \times \text{Esforço}^{\text{op}} \)):* define a *dominância de Pareto*. Os elementos maximais do quociente formam a *fronteira de Pareto* (tarefas não dominadas em ambos os critérios simultaneamente).
+2. *Ordem lexicográfica (\( \text{Severidade} \times_{\text{lex}} \text{Esforço}^{\text{op}} \)):* ordena primeiro por severidade e usa o menor esforço como critério de desempate entre tarefas de mesma severidade.
+
+#+begin_src rust
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Task {
+    pub name: &'static str,
+    pub severity: u8,
+    pub effort: u8,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TriageReport {
+    pub equal_severity_tie: bool,
+    pub pareto_frontier: HashSet<(u8, u8)>,
+    pub lex_priority_order: Vec<&'static str>,
+}
+
+pub fn triage_tasks() -> TriageReport {
+    let tasks = [
+        Task { name: "ui-glitch", severity: 1, effort: 1 },
+        Task { name: "cache-miss", severity: 2, effort: 1 },
+        Task { name: "db-lock", severity: 3, effort: 5 },
+        Task { name: "auth-bug", severity: 3, effort: 2 },
+    ];
+
+    // Pré-ordem induzida apenas pela severidade (tarefas com mesma severidade são equivalentes)
+    let auth_by_sev = ByKey::new(&tasks[3], |t| t.severity);
+    let lock_by_sev = ByKey::new(&tasks[2], |t| t.severity);
+    let equal_severity_tie = auth_by_sev.equiv(&lock_by_sev);
+
+    // Pré-ordens finitas sobre severidade (crescente) e esforço (decrescente via Dual)
+    let severities = [1_u8, 2, 3];
+    let mut sev_rel = Relation::new();
+    for &s in &severities {
+        sev_rel.insert_element(s);
+    }
+    for &s1 in &severities {
+        for &s2 in &severities {
+            if s1 <= s2 {
+                sev_rel.relate(s1, s2).unwrap();
+            }
+        }
+    }
+    let sev_preorder = PreorderSet::try_from(sev_rel).unwrap();
+
+    let efforts = [1_u8, 2, 5];
+    let mut eff_rel = Relation::new();
+    for &e in &efforts {
+        eff_rel.insert_element(e);
+    }
+    for &e1 in &efforts {
+        for &e2 in &efforts {
+            if e1 <= e2 {
+                eff_rel.relate(e1, e2).unwrap();
+            }
+        }
+    }
+    // Dual: esforço menor passa a ser maior na ordem de preferência
+    let eff_pref = PreorderSet::try_from(eff_rel).unwrap().dual();
+
+    // Subconjunto de perfis existentes nas tarefas para extrair a fronteira de Pareto
+    let product_order = sev_preorder.product(&eff_pref);
+    let mut active_profiles = Relation::new();
+    for t in &tasks {
+        active_profiles.insert_element((t.severity, t.effort));
+    }
+    for t1 in &tasks {
+        for t2 in &tasks {
+            let p1 = (t1.severity, t1.effort);
+            let p2 = (t2.severity, t2.effort);
+            if product_order.le(&p1, &p2) {
+                active_profiles.relate(p1, p2).unwrap();
+            }
+        }
+    }
+    let active_poset = PartialOrderSet::try_from(active_profiles).unwrap();
+    let pareto_frontier = active_poset.maximal_elements();
+
+    // Ordenação total via produto lexicográfico (Severidade, Dual(Esforço))
+    let lex_order = sev_preorder.lexicographic(&eff_pref);
+    let mut sorted_tasks: Vec<&Task> = tasks.iter().collect();
+    sorted_tasks.sort_by(|a, b| {
+        let pa = (a.severity, a.effort);
+        let pb = (b.severity, b.effort);
+        if pa == pb {
+            std::cmp::Ordering::Equal
+        } else if lex_order.le(&pa, &pb) {
+            std::cmp::Ordering::Less
+        } else {
+            std::cmp::Ordering::Greater
+        }
+    });
+    // Inverte para exibir da maior prioridade para a menor
+    sorted_tasks.reverse();
+    let lex_priority_order = sorted_tasks.into_iter().map(|t| t.name).collect();
+
+    TriageReport {
+        equal_severity_tie,
+        pareto_frontier,
+        lex_priority_order,
+    }
+}
+#+end_src
+
+** Suíte de Verificação (=cargo test=)
+Os testes abaixo validam cada propriedade matemática demonstrada nas quatro aplicações.
+
+#+begin_src rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_dependencies_and_hasse() {
+        let report = analyze_build_dependencies();
+
+        // Dependências transitivas de cli incluem todos os 7 módulos
+        assert_eq!(report.transitive_deps_of_cli.len(), 7);
+        // Impacto de core alcança todos os 7 módulos
+        assert_eq!(report.impact_of_core.len(), 7);
+
+        // Único ciclo mútuo detectado é {ast, parser}
+        assert_eq!(report.cyclic_clusters.len(), 1);
+        assert_eq!(
+            report.cyclic_clusters[0].0,
+            BTreeSet::from(["ast", "parser"])
+        );
+
+        // Aresta redundante core -> cli deve ter sido removida no Diagrama de Hasse
+        let core_scc = EquivalenceClass(BTreeSet::from(["core"]));
+        let cli_scc = EquivalenceClass(BTreeSet::from(["cli"]));
+        assert!(!report.hasse.cover_edges.contains(&(core_scc.clone(), cli_scc)));
+
+        // Reconstrução a partir do Diagrama de Hasse preserva a condensação
+        assert_eq!(report.hasse.to_poset().relation().domain.len(), 6);
+        assert_eq!(report.build_sequence.first(), Some(&core_scc));
+    }
+
+    #[test]
+    fn test_divisibility_preorder_and_lattice() {
+        let report = analyze_divisibility_lattice();
+
+        // Divisibilidade em Z com sinais não é antissimétrica
+        assert_eq!(
+            report.poset_attempt,
+            Err(OrderError::AntisymmetryViolated)
+        );
+
+        // MDC e MMC em pré-ordem retornam classes de equivalência { -d, d }
+        assert_eq!(report.gcd_4_and_6, HashSet::from([-2, 2]));
+        assert_eq!(report.lcm_4_and_6, HashSet::from([-12, 12]));
+
+        // Quociente tem 6 classes (±1, ±2, ±3, ±4, ±6, ±12) e 7 arestas de cobertura
+        assert_eq!(report.quotient_hasse.vertices.len(), 6);
+        assert_eq!(report.quotient_hasse.cover_edges.len(), 7);
+    }
+
+    #[test]
+    fn test_sign_galois_connection() {
+        let report = build_sign_galois_connection();
+
+        // Os 5 elementos fechados correspondem exatamente aos 5 elementos de Sign
+        assert_eq!(report.closed_subsets.len(), 5);
+        assert_eq!(
+            report.overapproximation_of_nonzero,
+            BTreeSet::from([-1, 0, 1])
+        );
+        assert_eq!(report.connection.open_elements().len(), 5);
+    }
+
+    #[test]
+    fn test_multicriteria_triage() {
+        let report = triage_tasks();
+
+        assert!(report.equal_severity_tie);
+        // Fronteira de Pareto: auth-bug (3, 2) e cache-miss (2, 1) são incomparáveis
+        assert_eq!(
+            report.pareto_frontier,
+            HashSet::from([(3, 2), (2, 1)])
+        );
+        // Ordem lexicográfica desempata severidade 3 pelo menor esforço (auth-bug antes de db-lock)
+        assert_eq!(
+            report.lex_priority_order,
+            vec!["auth-bug", "db-lock", "cache-miss", "ui-glitch"]
+        );
+    }
+}
+#+end_src
