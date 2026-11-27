@@ -100,9 +100,9 @@ Para provar identidades sobre tipos indutivos finitos como ~TruthValue~, o modo 
 
 ---
 
-** 1. Comutatividade e Associatividade da Conjunção ($\land$)
+** Comutatividade e Associatividade da Conjunção ($\land$)
 
-*** Prova Matemática (LaTeX)
+*** Prova
 *Proposição 1.1 (Comutatividade de $\land$).* Para quaisquer $p, q \in \mathsf{TruthValue}$, tem-se $p \land q = q \land p$.
 
 /Demonstração./ Procedemos por análise exaustiva sobre os construtores de $p$ e $q$, aplicando as equações definicionais $E_1: \mathsf{t} \land x = x$ e $E_2: \mathsf{f} \land x = \mathsf{f}$:
@@ -140,9 +140,9 @@ theorem land_assoc (p q r : TruthValue) : ((p ∧ q) ∧ r) = (p ∧ (q ∧ r)) 
 
 ---
 
-** 2. Comutatividade e Associatividade da Disjunção ($\lor$)
+** Comutatividade e Associatividade da Disjunção ($\lor$)
 
-*** Prova Matemática (LaTeX)
+*** Prova
 *Proposição 2.1 (Comutatividade de $\lor$).* Para quaisquer $p, q \in \mathsf{TruthValue}$, tem-se $p \lor q = q \lor p$.
 
 /Demonstração./ Pelas equações definicionais $E_3: \mathsf{t} \lor x = \mathsf{t}$ e $E_4: \mathsf{f} \lor x = x$:
@@ -170,9 +170,9 @@ theorem lor_assoc (p q r : TruthValue) : ((p ∨ q) ∨ r) = (p ∨ (q ∨ r)) :
 
 ---
 
-** 3. Leis de Identidade, Anulação e Dupla Negação
+** Leis de Identidade, Anulação e Dupla Negação
 
-*** Prova Matemática (LaTeX)
+*** Prova
 *Proposição 3.1 (Involução / Dupla Negação).* Para todo $p \in \mathsf{TruthValue}$, $\neg(\neg p) = p$.
 
 /Demonstração./ Pelas equações $E_5: \neg \mathsf{t} = \mathsf{f}$ e $E_6: \neg \mathsf{f} = \mathsf{t}$:
@@ -204,9 +204,9 @@ theorem lor_false (p : TruthValue) : (p ∨ f) = p := by
 
 ---
 
-** 4. Leis de De Morgan e Distributividade
+** Leis de De Morgan e Distributividade
 
-*** Prova Matemática (LaTeX)
+*** Prova
 *Proposição 4.1 (Leis de De Morgan).* Para quaisquer $p, q \in \mathsf{TruthValue}$:
 1. $\neg(p \land q) = (\neg p) \lor (\neg q)$
 2. $\neg(p \lor q) = (\neg p) \land (\neg q)$

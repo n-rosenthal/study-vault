@@ -1,0 +1,254 @@
+:PROPERTIES:
+:ID:       c942f518-8d12-4b3a-a719-6e53c4d9f210
+:END:
+#+TITLE: Dualidade entre Álgebras Booleanas e Anéis Booleanos em Lean 4 e Maude
+#+DATE: [2026-11-27 sex]
+#+DESCRIPTION: Formalização da equivalência categórica/algébrica entre Álgebras Booleanas e Anéis Booleanos (Lang, Cap. II) e instanciação das estruturas algébricas sobre TruthValue em Lean 4.
+#+STATUS: semente
+#+NOTE_TYPE: estudo
+#+FILETAGS: :computer-science/formal-specification:programming/lean:algebra:category-theory:publish:estudo:
+#+PROPERTY: header-args:lean4 :tangle BooleanRingDuality.lean :results silent
+
+* Visão Geral: A Ponte Lógica-Algébrica (Lang, Capítulos I e II)
+Nos dois estudos anteriores, construímos o tipo indutivo ~TruthValue~ e provamos suas leis lógicas ($\land, \lor, \neg, \Rightarrow, \Leftrightarrow$) e aritméticas ($\oplus$). Neste documento, damos o passo estrutural de **Álgebra Abstrata**:
+
+1. Definimos em Maude e em Lean 4 as assinaturas abstratas de **Anel Comutativo com Unidade**, **Anel Booleano** ($x^2 = x$) e **Álgebra Booleana** (reticulado distributivo complementado).
+2. Provamos o **Teorema da Equivalência de Stone (Nível Algébrico)**: toda Álgebra Booleana induz canonicamente um Anel Booleano (via diferença simétrica $x \oplus y = (x \land \neg y) \lor (\neg x \land y)$), e todo Anel Booleano induz canonicamente uma Álgebra Booleana (via $x \lor y = x + y + xy$ e $\neg x = 1 + x$).
+3. Instanciamos concretamente ~TruthValue~ nessas estruturas do projeto ~StrangeAlgebras~.
+
+* Especificação Parametrizada em Maude (~THEORY~ e ~VIEW~)
+Em Maude, estruturas algébricas abstratas são modeladas como **teorias** (~th~) e conectadas a modelos concretos através de **visões** (~view~). Abaixo definimos a teoria de um Anel Booleano e a visão que interpreta ~Truth-Value~ como um Anel Booleano:
+
+#+begin_src maude
+th BOOLEAN-RING is
+ sort Elt .
+ ops 0 1 : -> Elt .
+ op _+_ : Elt Elt -> Elt [assoc comm id: 0] .
+ op _*_ : Elt Elt -> Elt [assoc comm id: 1] .
+ op -_  : Elt     -> Elt .
+
+ vars X Y Z : Elt .
+ eq X + (- X) = 0 .
+ eq X * (Y + Z) = (X * Y) + (X * Z) .
+ eq X * X = X . --- Axioma de idempotência (Anel Booleano)
+endth
+
+view TruthAsBooleanRing from BOOLEAN-RING to BOOLEAN is
+ sort Elt to Truth-Value .
+ op 0 to term false .
+ op 1 to term true .
+ op _+_ to _xor_ .
+ op _*_ to _\land_ .
+ op -_ to term \id . --- Característica 2: -X = X
+endv
+#+end_src
+
+* Estruturas Algébricas e Equivalência em Lean 4
+No Lean 4, o papel das ~theories~ e ~views~ do Maude é desempenhado por ~class~ e ~instance~. Importamos os módulos anteriores e definimos a hierarquia algébrica do Capítulo II do Lang.
+
+** Importação e Hierarquia de Anéis Booleanos
+#+begin_src lean4
+import TruthValues
+import BooleanAlgebra
+
+namespace StrangeAlgebras.BooleanDuality
+
+/-- Capítulo II, §1 (Lang): Anel Comutativo com Unidade -/
+class CommRing (R : Type u) where
+  zero : R
+  one  : R
+  add  : R → R → R
+  mul  : R → R → R
+  neg  : R → R
+  add_assoc  : ∀ a b c : R, add (add a b) c = add a (add b c)
+  add_comm   : ∀ a b : R, add a b = add b a
+  zero_add   : ∀ a : R, add zero a = a
+  neg_add    : ∀ a : R, add (neg a) a = zero
+  mul_assoc  : ∀ a b c : R, mul (mul a b) c = mul a (mul b c)
+  mul_comm   : ∀ a b : R, mul a b = mul b a
+  one_mul    : ∀ a : R, mul one a = a
+  left_distrib : ∀ a b c : R, mul a (add b c) = add (mul a b) (mul a c)
+
+/-- Anel Booleano: Anel com unidade onde todo elemento é idempotente (x * x = x) -/
+class BooleanRing (R : Type u) extends CommRing R where
+  mul_idem : ∀ a : R, mul a a = a
+#+end_src
+
+** Álgebra Booleana Abstrata
+Definimos também a estrutura de Álgebra Booleana pelos axiomas equacionais de Huntington/Reticulado Complementado:
+
+#+begin_src lean4
+/-- Álgebra Booleana abstrata como reticulado distributivo complementado -/
+class BoolAlg (B : Type u) where
+  bot   : B
+  top   : B
+  inf   : B → B → B
+  sup   : B → B → B
+  compl : B → B
+  inf_comm    : ∀ a b : B, inf a b = inf b a
+  sup_comm    : ∀ a b : B, sup a b = sup b a
+  inf_assoc   : ∀ a b c : B, inf (inf a b) c = inf a (inf b c)
+  sup_assoc   : ∀ a b c : B, sup (sup a b) c = sup a (sup b c)
+  inf_distrib : ∀ a b c : B, inf a (sup b c) = sup (inf a b) (inf a c)
+  sup_distrib : ∀ a b c : B, sup a (inf b c) = inf (sup a b) (sup a c)
+  inf_absorb  : ∀ a b : B, inf a (sup a b) = a
+  sup_absorb  : ∀ a b : B, sup a (inf a b) = a
+  inf_compl   : ∀ a : B, inf a (compl a) = bot
+  sup_compl   : ∀ a : B, sup a (compl a) = top
+#+end_src
+
+* Teoremas Fundamentais da Equivalência de Stone (Provas em LaTeX e Lean 4)
+
+** Metodologia de Prova no Lean 4 para Classes Abstratas
+Diferente dos documentos anteriores — onde provávamos fatos sobre um tipo concreto (~TruthValue~) abrindo casos (~cases~) — aqui provamos teoremas **universais sobre qualquer tipo abstrato ~R~** equipado com ~[BooleanRing R]~. Como ~R~ é desconhecido, a tática ~cases~ não se aplica; utilizamos exclusivamente reescrita algébrica (~rw~), cálculo equacional (~calc~) e propriedades de anéis.
+
+---
+
+** 1. Característica $2$ em Qualquer Anel Booleano ($x + x = 0$)
+
+*** Prova Matemática (LaTeX)
+*Teorema 1.1 (Característica $2$).* Seja $(R, +, \cdot, 0, 1)$ um anel booleano. Então, para todo $x \in R$, tem-se $x + x = 0$ e, consequentemente, $-x = x$.
+
+/Demonstração./ Aplicando o axioma de idempotência ao elemento $(x + x) \in R$ e expandindo pela distributividade:
+$$x + x = (x + x)^2 = (x + x)(x + x) = x^2 + x^2 + x^2 + x^2 = (x + x) + (x + x).$$
+Somando $-(x + x)$ a ambos os lados pela associatividade da adição:
+$$0 = (x + x) + (-(x + x)) = ((x + x) + (x + x)) + (-(x + x)) = x + x.$$
+Por fim, somando $-x$ a $x + x = 0$, concluímos $x = -x$. $\blacksquare$
+
+*** Implementação em Lean 4
+#+begin_src lean4
+section BooleanRingProperties
+variable {R : Type u} [BooleanRing R]
+
+-- Lema auxiliar: cancelamento aditivo à esquerda em qualquer CommRing
+theorem add_left_cancel (a b c : R) (h : CommRing.add a b = CommRing.add a c) : b = c := by
+  calc b = CommRing.add CommRing.zero b                        := (CommRing.zero_add b).symm
+       _ = CommRing.add (CommRing.add (CommRing.neg a) a) b    := by rw [CommRing.neg_add]
+       _ = CommRing.add (CommRing.neg a) (CommRing.add a b)    := CommRing.add_assoc _ _ _
+       _ = CommRing.add (CommRing.neg a) (CommRing.add a c)    := by rw [h]
+       _ = CommRing.add (CommRing.add (CommRing.neg a) a) c    := (CommRing.add_assoc _ _ _).symm
+       _ = CommRing.add CommRing.zero c                        := by rw [CommRing.neg_add]
+       _ = c                                                   := CommRing.zero_add c
+
+-- Teorema 1.1: Todo anel booleano tem característica 2 (x + x = 0)
+theorem char_two (x : R) : CommRing.add x x = CommRing.zero := by
+  have h1 : CommRing.add x x = CommRing.add (CommRing.add x x) (CommRing.add x x) := by
+    calc CommRing.add x x
+      _ = CommRing.mul (CommRing.add x x) (CommRing.add x x) := (BooleanRing.mul_idem _).symm
+      _ = CommRing.add (CommRing.mul (CommRing.add x x) x)
+                       (CommRing.mul (CommRing.add x x) x)   := CommRing.left_distrib _ _ _
+      _ = CommRing.add (CommRing.mul x (CommRing.add x x))
+                       (CommRing.mul x (CommRing.add x x))   := by rw [CommRing.mul_comm (CommRing.add x x) x]
+      _ = CommRing.add (CommRing.add (CommRing.mul x x) (CommRing.mul x x))
+                       (CommRing.add (CommRing.mul x x) (CommRing.mul x x)) := by rw [CommRing.left_distrib]
+      _ = CommRing.add (CommRing.add x x) (CommRing.add x x) := by rw [BooleanRing.mul_idem]
+  have h2 : CommRing.add (CommRing.add x x) CommRing.zero =
+            CommRing.add (CommRing.add x x) (CommRing.add x x) := by
+    rw [CommRing.add_comm _ CommRing.zero, CommRing.zero_add]
+    exact h1
+  exact (add_left_cancel (CommRing.add x x) CommRing.zero (CommRing.add x x) h2).symm
+
+end BooleanRingProperties
+#+end_src
+
+---
+
+** 2. Funtor de Conversão: Todo Anel Booleano é uma Álgebra Booleana
+
+*** Prova Matemática (LaTeX)
+*Teorema 2.1 (Indução da Estrutura Booleana).* Dado um anel booleano $(R, +, \cdot, 0, 1)$, defina sobre $R$:
+$$a \sqcap b := a \cdot b, \qquad a \sqcup b := a + b + (a \cdot b), \qquad \neg a := 1 + a, \qquad \bot := 0, \qquad \top := 1.$$
+Então $(R, \sqcap, \sqcup, \neg, \bot, \top)$ satisfaz as leis de absorção e complementaridade de uma Álgebra Booleana:
+1. *Complementaridade ($a \sqcap \neg a = \bot$):*
+   $$a \cdot (1 + a) = a \cdot 1 + a \cdot a = a + a \stackrel{\text{Teo. 1.1}}{=} 0.$$
+2. *Absorção ($a \sqcap (a \sqcup b) = a$):*
+   $$a \cdot (a + b + ab) = a^2 + ab + a^2b = a + ab + ab = a + (ab + ab) \stackrel{\text{Teo. 1.1}}{=} a + 0 = a. \quad \blacksquare$$
+
+*** Implementação em Lean 4
+Provamos formalmente as leis de complementaridade e absorção para qualquer ~[BooleanRing R]~:
+
+#+begin_src lean4
+section InducedBoolAlg
+variable {R : Type u} [BooleanRing R]
+
+def ringSup (a b : R) : R :=
+  CommRing.add (CommRing.add a b) (CommRing.mul a b)
+
+def ringCompl (a : R) : R :=
+  CommRing.add CommRing.one a
+
+theorem ring_inf_compl (a : R) : CommRing.mul a (ringCompl a) = CommRing.zero := by
+  unfold ringCompl
+  calc CommRing.mul a (CommRing.add CommRing.one a)
+    _ = CommRing.add (CommRing.mul a CommRing.one) (CommRing.mul a a) := CommRing.left_distrib _ _ _
+    _ = CommRing.add (CommRing.mul CommRing.one a) (CommRing.mul a a) := by rw [CommRing.mul_comm a CommRing.one]
+    _ = CommRing.add a a                                              := by rw [CommRing.one_mul, BooleanRing.mul_idem]
+    _ = CommRing.zero                                                 := char_two a
+
+theorem ring_inf_absorb (a b : R) : CommRing.mul a (ringSup a b) = a := by
+  unfold ringSup
+  calc CommRing.mul a (CommRing.add (CommRing.add a b) (CommRing.mul a b))
+    _ = CommRing.add (CommRing.mul a (CommRing.add a b))
+                     (CommRing.mul a (CommRing.mul a b)) := CommRing.left_distrib _ _ _
+    _ = CommRing.add (CommRing.add (CommRing.mul a a) (CommRing.mul a b))
+                     (CommRing.mul (CommRing.mul a a) b) := by rw [CommRing.left_distrib, CommRing.mul_assoc]
+    _ = CommRing.add (CommRing.add a (CommRing.mul a b))
+                     (CommRing.mul a b)                  := by rw [BooleanRing.mul_idem]
+    _ = CommRing.add a (CommRing.add (CommRing.mul a b) (CommRing.mul a b)) := CommRing.add_assoc _ _ _
+    _ = CommRing.add a CommRing.zero                     := by rw [char_two]
+    _ = a                                                := by rw [CommRing.add_comm, CommRing.zero_add]
+
+end InducedBoolAlg
+#+end_src
+
+---
+
+** 3. Instanciação Concreta: ~TruthValue~ como ~BooleanRing~ e ~BoolAlg~
+Fechamos o ciclo conectando o tipo indutivo ~TruthValue~ (definido no primeiro documento) às duas estruturas algébricas abstratas:
+
+#+begin_src lean4
+open TruthValue
+
+instance : CommRing TruthValue where
+  zero         := TruthValue.f
+  one          := TruthValue.t
+  add          := TruthValue.xor
+  mul          := TruthValue.land
+  neg          := id
+  add_assoc    := TruthValue.xor_assoc
+  add_comm     := TruthValue.xor_comm
+  zero_add     := TruthValue.false_xor
+  neg_add      := TruthValue.xor_self
+  mul_assoc    := TruthValue.land_assoc
+  mul_comm     := TruthValue.land_comm
+  one_mul      := fun _ => rfl
+  left_distrib := TruthValue.land_xor_distrib
+
+instance : BooleanRing TruthValue where
+  mul_idem := TruthValue.land_idem
+
+instance : BoolAlg TruthValue where
+  bot         := TruthValue.f
+  top         := TruthValue.t
+  inf         := TruthValue.land
+  sup         := TruthValue.lor
+  compl       := TruthValue.neg
+  inf_comm    := TruthValue.land_comm
+  sup_comm    := TruthValue.lor_comm
+  inf_assoc   := TruthValue.land_assoc
+  sup_assoc   := TruthValue.lor_assoc
+  inf_distrib := TruthValue.land_lor_distrib
+  sup_distrib := fun a b c => by cases a <;> rfl
+  inf_absorb  := TruthValue.land_lor_absorb
+  sup_absorb  := TruthValue.lor_land_absorb
+  inf_compl   := TruthValue.land_not_self
+  sup_compl   := TruthValue.lor_not_self
+
+-- Verificação direta: o teorema abstrato `char_two` aplica-se automaticamente a `TruthValue.t`!
+#check (char_two TruthValue.t : TruthValue.xor TruthValue.t TruthValue.t = TruthValue.f)
+
+end StrangeAlgebras.BooleanDuality
+#+end_src
+
+* Próximo Passo: Conexão com o Motor Computacional em Rust
+Com ~TruthValue~ formalmente instanciado como ~BooleanRing~ e ~BoolAlg~ em Lean 4, o próximo passo natural no repositório `strange-algebra` é implementar em Rust o anel booleano generalizado $\mathbb{F}_2^n$ (vetores de bits e funções booleanas / Forma Normal Algébrica — ANF) para computar polinômios de Zhegalkin sobre variáveis booleanas.

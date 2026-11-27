@@ -1,0 +1,297 @@
+:PROPERTIES:
+:ID:       d4a8e901-5f23-4c6b-81e4-9b7a2c3d1e50
+:END:
+#+TITLE: Polinômios de Zhegalkin, Anéis Booleanos Livres e Transformada de Möbius (Lean 4 + Rust)
+#+DATE: [2026-11-27 sex]
+#+DESCRIPTION: Formalização do Anel Booleano Livre em n geradores (Forma Normal Algébrica / Zhegalkin) em Lean 4 com provas em LaTeX e implementação de alta performance da Transformada Rápida de Möbius em Rust.
+#+STATUS: semente
+#+NOTE_TYPE: estudo
+#+FILETAGS: :computer-science/formal-specification:programming/lean:programming/rust:algebra:publish:estudo:
+
+* Visão Geral: Do Valor de Verdade ao Anel Booleano Livre
+Nos três documentos anteriores, partimos de ~TruthValue~ ($\mathbb{F}_2$) e provamos que $(\mathsf{TruthValue}, \oplus, \land, \mathsf{f}, \mathsf{t})$ é um **Anel Booleano** de característica $2$. 
+
+Na Álgebra de Lang (Capítulo II e Capítulo IV), ao tomarmos o anel de polinômios $\mathbb{F}_2[x_0, \dots, x_{n-1}]$ e aplicarmos o quociente pelo ideal gerado pelas relações de idempotência $I = (x_0^2 - x_0, \dots, x_{n-1}^2 - x_{n-1})$, obtemos o **Anel Booleano Livre em $n$ geradores**:
+$$\mathcal{B}_n \cong \mathbb{F}_2[x_0, \dots, x_{n-1}] / (x_i^2 - x_i) \cong \mathbb{F}_2^{2^n}.$$
+
+Todo elemento de $\mathcal{B}_n$ (isto é, toda função booleana $f : \mathbb{F}_2^n \to \mathbb{F}_2$) possui uma única representação canônica como soma exclusiva de monômios multilineares, conhecida como **Polinômio de Zhegalkin** ou **Forma Normal Algébrica (ANF)**:
+$$f(x_0, \dots, x_{n-1}) = \bigoplus_{S \subseteq \{0, \dots, n-1\}} c_S \prod_{i \in S} x_i, \qquad c_S \in \mathbb{F}_2.$$
+
+Neste estudo:
+1. **Formalizamos em Lean 4** o espaço de funções booleanas de $n$ variáveis (~BoolFn n~), provamos que ele herda pontualmente a estrutura de ~BooleanRing~ e formalizamos a **Transformada de Möbius** que extrai os coeficientes $c_S$ a partir da tabela-verdade.
+2. **Implementamos em Rust** o motor computacional (~ch02-rings~) capaz de operar sobre tabelas-verdade como bitmasks e calcular a ANF via algoritmo *butterfly* em $O(n 2^n)$.
+
+* Camada Formal em Lean 4 (~Zhegalkin.lean~)
+:PROPERTIES:
+:header-args:lean4: :tangle lean/StrangeAlgebras/Zhegalkin.lean :results silent
+:END:
+
+** Representação de Vetores de Bits e Funções Booleanas
+Representamos uma valoração de $n$ variáveis booleanas como um vetor ~Fin n → TruthValue~ (ou indexada por um subconjunto ~Finset (Fin n)~). Uma função booleana de $n$ variáveis é simplesmente o espaço funcional ~(Fin n → TruthValue) → TruthValue~.
+
+#+begin_src lean4
+import TruthValues
+import BooleanAlgebra
+import BooleanRingDuality
+
+namespace StrangeAlgebras.Zhegalkin
+
+open TruthValue
+open StrangeAlgebras.BooleanDuality
+
+/-- Espaço das funções booleanas em n variáveis: (Fin n → TruthValue) → TruthValue -/
+abbrev BoolFn (n : Nat) := (Fin n → TruthValue) → TruthValue
+
+/-- Operações pontuais (pointwise) induzidas pela estrutura de Anel Booleano de TruthValue -/
+def fnZero (n : Nat) : BoolFn n := fun _ => TruthValue.f
+def fnOne  (n : Nat) : BoolFn n := fun _ => TruthValue.t
+def fnAdd  {n : Nat} (f g : BoolFn n) : BoolFn n := fun v => TruthValue.xor (f v) (g v)
+def fnMul  {n : Nat} (f g : BoolFn n) : BoolFn n := fun v => TruthValue.land (f v) (g v)
+#+end_src
+
+** Teorema 1: Estrutura de Anel Booleano sobre $\mathcal{B}_n$
+
+*** Prova Matemática (LaTeX)
+*Teorema 1.1 (Anel Booleano de Funções).* Para todo $n \in \mathbb{N}$, o conjunto $\mathcal{B}_n = (\mathsf{Fin}\ n \to \mathsf{TruthValue}) \to \mathsf{TruthValue}$ munido das operações pontuais $(f \oplus g)(v) = f(v) \oplus g(v)$ e $(f \land g)(v) = f(v) \land g(v)$ forma um Anel Booleano.
+
+/Demonstração./ Pelo princípio da extensionalidade funcional (~funext~), duas funções $f, g \in \mathcal{B}_n$ são iguais se, e somente se, $f(v) = g(v)$ para todo vetor de entrada $v \in \mathsf{TruthValue}^n$. Como para cada $v$ fixo os valores $f(v), g(v)$ pertencem ao anel booleano $\mathsf{TruthValue}$, cada axioma (associatividade, comutatividade, distributividade e idempotência $f \land f = f$) reduz-se imediatamente ao axioma correspondente em $\mathsf{TruthValue}$. $\blacksquare$
+
+*** Implementação em Lean 4
+No Lean 4, a tática ~funext v~ introduz um vetor arbitrário $v : \mathsf{Fin}\ n \to \mathsf{TruthValue}$ e reduz a igualdade entre funções à igualdade entre seus valores pontuais:
+
+#+begin_src lean4
+instance (n : Nat) : CommRing (BoolFn n) where
+  zero         := fnZero n
+  one          := fnOne n
+  add          := fnAdd
+  mul          := fnMul
+  neg          := id
+  add_assoc    := fun f g h => by funext v; exact TruthValue.xor_assoc (f v) (g v) (h v)
+  add_comm     := fun f g   => by funext v; exact TruthValue.xor_comm (f v) (g v)
+  zero_add     := fun f     => by funext v; exact TruthValue.false_xor (f v)
+  neg_add      := fun f     => by funext v; exact TruthValue.xor_self (f v)
+  mul_assoc    := fun f g h => by funext v; exact TruthValue.land_assoc (f v) (g v) (h v)
+  mul_comm     := fun f g   => by funext v; exact TruthValue.land_comm (f v) (g v)
+  one_mul      := fun f     => by funext v; rfl
+  left_distrib := fun f g h => by funext v; exact TruthValue.land_xor_distrib (f v) (g v) (h v)
+
+instance (n : Nat) : BooleanRing (BoolFn n) where
+  mul_idem := fun f => by funext v; exact TruthValue.land_idem (f v)
+#+end_src
+
+** Expansão de Shannon (Decomposição de Boole)
+A existência da Forma Normal Algébrica fundamenta-se na **Expansão de Shannon** (decomposição em relação a uma variável $x_i$):
+
+*** Prova Matemática (LaTeX)
+*Teorema 2.1 (Expansão de Shannon sobre $\mathbb{F}_2$).* Para toda função booleana $f(x_0, \dots, x_{n-1})$ e qualquer variável $x_i$:
+$$f(\mathbf{x}) = f(\mathbf{x}|_{x_i = \mathsf{f}}) \oplus \Big( x_i \land \big( f(\mathbf{x}|_{x_i = \mathsf{f}}) \oplus f(\mathbf{x}|_{x_i = \mathsf{t}}) \big) \Big).$$
+
+/Demonstração./ Escrevendo $f_0 = f(\mathbf{x}|_{x_i = \mathsf{f}})$ e $f_1 = f(\mathbf{x}|_{x_i = \mathsf{t}})$, analisamos os dois valores possíveis de $x_i$:
+- *Caso $x_i = \mathsf{f}$:* O lado direito reduz-se a $f_0 \oplus (\mathsf{f} \land (f_0 \oplus f_1)) = f_0 \oplus \mathsf{f} = f_0 = f(\mathbf{x})$.
+- *Caso $x_i = \mathsf{t}$:* O lado direito reduz-se a $f_0 \oplus (\mathsf{t} \land (f_0 \oplus f_1)) = f_0 \oplus (f_0 \oplus f_1) = (f_0 \oplus f_0) \oplus f_1 = \mathsf{f} \oplus f_1 = f_1 = f(\mathbf{x})$. $\blacksquare$
+
+*** Implementação em Lean 4
+#+begin_src lean4
+/-- Substituição da i-ésima coordenada de um vetor v por um valor b -/
+def update {n : Nat} (v : Fin n → TruthValue) (i : Fin n) (b : TruthValue) : Fin n → TruthValue :=
+  fun j => if j = i then b else v j
+
+theorem shannon_expansion {n : Nat} (f : BoolFn n) (i : Fin n) (v : Fin n → TruthValue) :
+    f v = xor (f (update v i f)) (land (v i) (xor (f (update v i f)) (f (update v i t)))) := by
+  -- Provamos um lema auxiliar para um bit arbitrário b = v i
+  have h_update : update v i (v i) = v := by
+    funext j
+    unfold update
+    split
+    · rename_i h; subst h; rfl
+    · rfl
+  conv_lhs => rw [← h_update]
+  cases h_vi : v i
+  · -- Caso v i = f
+    simp [xor, land, false_xor, xor_false]
+  · -- Caso v i = t
+    calc f (update v i t)
+      _ = xor TruthValue.f (f (update v i t)) := (false_xor _).symm
+      _ = xor (xor (f (update v i f)) (f (update v i f))) (f (update v i t)) := by rw [xor_self]
+      _ = xor (f (update v i f)) (xor (f (update v i f)) (f (update v i t))) := xor_assoc _ _ _
+      _ = xor (f (update v i f)) (land TruthValue.t (xor (f (update v i f)) (f (update v i t)))) := rfl
+
+end StrangeAlgebras.Zhegalkin
+#+end_src
+
+* Motor Computacional em Rust: Transformada Rápida de Möbius
+:PROPERTIES:
+:header-args:rust: :tangle rust/crates/ch02-rings/src/zhegalkin.rs :results silent
+:END:
+
+A Expansão de Shannon aplicada iterativamente para $i = 0, 1, \dots, n-1$ fornece exatamente o algoritmo **butterfly XOR** (Transformada Rápida de Möbius sobre o reticulado booleano $2^{\{0,\dots,n-1\}}$).
+
+Dada a tabela-verdade $T \in \mathbb{F}_2^{2^n}$ (onde $T[m]$ é o valor de $f$ na entrada cujos bits são a máscara binária $m$), o vetor de coeficientes de Zhegalkin $C \in \mathbb{F}_2^{2^n}$ satisfaz:
+$$C[S] = \bigoplus_{M \subseteq S} T[M], \qquad T[M] = \bigoplus_{S \subseteq M} C[S].$$
+Como estamos em característica $2$, a transformada é **involutiva** (aplicá-la duas vezes retorna a tabela-verdade original!).
+
+#+begin_src rust
+use std::fmt;
+
+/// Representa um elemento do Anel Booleano Livre B_n = F_2[x_0, ..., x_{n-1}] / (x_i^2 - x_i)
+/// armazenado como vetor de coeficientes de Zhegalkin (2^n bits).
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct ZhegalkinPoly {
+    pub num_vars: usize,
+    /// coeffs[mask] == true significa que o monômio \prod_{i \in mask} x_i está presente
+    pub coeffs: Vec<bool>,
+}
+
+impl ZhegalkinPoly {
+    /// Constrói um polinômio de Zhegalkin a partir da tabela-verdade (tamanho 2^num_vars)
+    /// aplicando a Transformada Rápida de Möbius em O(n * 2^n).
+    pub fn from_truth_table(num_vars: usize, truth_table: &[bool]) -> Self {
+        let size = 1usize << num_vars;
+        assert_eq!(
+            truth_table.len(),
+            size,
+            "A tabela-verdade deve ter exatamente 2^n = {} entradas",
+            size
+        );
+
+        let mut coeffs = truth_table.to_vec();
+        // Butterfly XOR (aplicação iterada da Expansão de Shannon)
+        for i in 0..num_vars {
+            let step = 1usize << i;
+            for mask in 0..size {
+                if (mask & step) != 0 {
+                    coeffs[mask] ^= coeffs[mask ^ step];
+                }
+            }
+        }
+
+        Self { num_vars, coeffs }
+    }
+
+    /// Converte de volta para a tabela-verdade.
+    /// Como o anel tem característica 2, a Transformada de Möbius é sua própria inversa!
+    pub fn to_truth_table(&self) -> Vec<bool> {
+        Self::from_truth_table(self.num_vars, &self.coeffs).coeffs
+    }
+
+    /// Adição no Anel Booleano (XOR componente a componente)
+    pub fn add(&self, other: &Self) -> Self {
+        assert_eq!(self.num_vars, other.num_vars);
+        let coeffs = self
+            .coeffs
+            .iter()
+            .zip(&other.coeffs)
+            .map(|(&a, &b)| a ^ b)
+            .collect();
+        Self {
+            num_vars: self.num_vars,
+            coeffs,
+        }
+    }
+
+    /// Multiplicação no Anel Booleano (convolução OR sobre subconjuntos em F_2)
+    pub fn mul(&self, other: &Self) -> Self {
+        assert_eq!(self.num_vars, other.num_vars);
+        let size = self.coeffs.len();
+        let mut coeffs = vec![false; size];
+        for m1 in 0..size {
+            if !self.coeffs[m1] {
+                continue;
+            }
+            for m2 in 0..size {
+                if other.coeffs[m2] {
+                    // x_i * x_i = x_i corresponde à união bit-a-bit (m1 | m2)
+                    coeffs[m1 | m2] ^= true;
+                }
+            }
+        }
+        Self {
+            num_vars: self.num_vars,
+            coeffs,
+        }
+    }
+
+    /// Grau algébrico do polinômio (maior número de variáveis em um monômio não-nulo)
+    pub fn algebraic_degree(&self) -> Option<usize> {
+        self.coeffs
+            .iter()
+            .enumerate()
+            .filter(|(_, &c)| c)
+            .map(|(mask, _)| mask.count_ones() as usize)
+            .max()
+    }
+}
+
+impl fmt::Display for ZhegalkinPoly {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut terms = Vec::new();
+        for (mask, &present) in self.coeffs.iter().enumerate() {
+            if !present {
+                continue;
+            }
+            if mask == 0 {
+                terms.push("1".to_string());
+            } else {
+                let mut vars = Vec::new();
+                for i in 0..self.num_vars {
+                    if (mask & (1 << i)) != 0 {
+                        vars.push(format!("x{}", i));
+                    }
+                }
+                terms.push(vars.join("·"));
+            }
+        }
+        if terms.is_empty() {
+            write!(f, "0")
+        } else {
+            write!(f, "{}", terms.join(" ⊕ "))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_implication_zhegalkin() {
+        // Tabela-verdade de (x0 => x1) para (x1, x0) em ordem binária:
+        // 00 (0=>0): 1
+        // 01 (1=>0): 0
+        // 10 (0=>1): 1
+        // 11 (1=>1): 1
+        let tt = vec![true, false, true, true];
+        let poly = ZhegalkinPoly::from_truth_table(2, &tt);
+
+        // (x0 => x1) = 1 ⊕ x0 ⊕ x0·x1
+        assert_eq!(poly.to_string(), "1 ⊕ x0 ⊕ x0·x1");
+        assert_eq!(poly.algebraic_degree(), Some(2));
+        // Involução: aplicar novamente recupera a tabela-verdade
+        assert_eq!(poly.to_truth_table(), tt);
+    }
+
+    #[test]
+    fn test_boolean_ring_axioms() {
+        let p = ZhegalkinPoly::from_truth_table(2, &[true, false, true, false]);
+        let q = ZhegalkinPoly::from_truth_table(2, &[false, true, true, false]);
+
+        // Característica 2: p + p = 0
+        let zero = ZhegalkinPoly {
+            num_vars: 2,
+            coeffs: vec![false; 4],
+        };
+        assert_eq!(p.add(&p), zero);
+
+        // Idempotência: p * p = p
+        assert_eq!(p.mul(&p), p);
+
+        // Distributividade: p * (p + q) = p*p + p*q
+        assert_eq!(p.mul(&p.add(&q)), p.mul(&p).add(&p.mul(&q)));
+    }
+}
+#+end_src
+
+* Roteiro de Verificação e Próximo Capítulo
+1. **Sincronização:** Execute ~C-c C-v t~ para extrair tanto o arquivo Lean (`lean/StrangeAlgebras/Zhegalkin.lean`) quanto o módulo Rust (`rust/crates/ch02-rings/src/zhegalkin.rs`).
+2. **Validação:** Rode ~lake build~ para verificar a prova formal da Expansão de Shannon e ~cargo test~ para validar a Transformada Rápida de Möbius.
+3. **Próximo Estudo:** Com o anel de polinômios multilineares $\mathcal{B}_n$ estabelecido, o próximo passo na álgebra de Lang é sair da característica $2$ e construir o anel de polinômios univariados gerais $R[x]$ sobre um anel arbitrário $R$ (Capítulo IV do Lang), formalizando o algoritmo de divisão euclidiana e a construção de corpos finitos $\mathbb{F}_{p^n} \cong \mathbb{F}_p[x]/(f(x))$.
