@@ -155,12 +155,12 @@ A associação entre nome e valor já é fornecida pela própria lista.
 
 A separação de responsabilidades é:
 
-| Componente    | Responsabilidade                         |
-|---------------+------------------------------------------|
-| =LinkedList=  | Estrutura persistente e armazenamento    |
-| =Context=     | Operações semânticas sobre bindings      |
-| =Node=        | Representação interna de um elemento     |
-| =Rc=          | Compartilhamento estrutural              |
+| Componente | Responsabilidade                      |
+|------------+---------------------------------------|
+| =LinkedList= | Estrutura persistente e armazenamento |
+| =Context=    | Operações semânticas sobre bindings   |
+| =Node=       | Representação interna de um elemento  |
+| =Rc=         | Compartilhamento estrutural           |
 
 O contexto não precisa conhecer a implementação dos nós.
 
@@ -479,11 +479,6 @@ dos bindings.
     especializações da abstração genérica.
 
 * Referências internas
-
-- [[file:../../LinkedList.rs][LinkedList]]
-- [[file:traits.rs][Interface abstrata de contextos]]
-- [[file:linked.rs][Implementação persistente]]
-- [[file:map.rs][Implementação baseada em mapa]]
 
 * Próximos passos
 
