@@ -1,0 +1,36 @@
+:PROPERTIES:
+:ID:       algebra--magma-semigroup--def
+:END:
+#+TITLE: Magma e Semigrupo
+#+DATE: [2026-11-27 sex]
+#+DESCRIPTION: Definição formal de magma e semigrupo, associatividade generalizada, elementos idempotentes, semigrupo livre e semigrupo oposto.
+#+STATUS: semente
+#+NOTE_TYPE: conceito
+#+FILETAGS: :algebra:semigroup-theory:conceito:publish:
+
+* Definição Formal
+Seja $S$ um [[id: "algebra--set--def"][Conjunto]] munido de uma [[id: "algebra--binary-operation--def"][Operação Binária]] interna $\star : S \times S \to S$:
+1. *Magma (ou Grupóide):* É o par $(S, \star)$, sem nenhuma restrição axiomática além do fechamento ($\forall a, b \in S,\; a \star b \in S$).
+2. *Semigrupo:* É um magma $(S, \star)$ cuja operação é **associativa**:
+   $$\forall a, b, c \in S,\quad (a \star b) \star c = a \star (b \star c).$$
+
+* Subestruturas e Construções Fundamentais
+- *Subsemigrupo:* Um subconjunto $T \subseteq S$ tal que $\forall a, b \in T,\; a \star b \in T$ (fechado sob $\star$; a associatividade é herdada de $S$).
+- *Semigrupo Oposto ($S^{\mathrm{op}}$):* Dado um semigrupo $(S, \star)$, definimos $(S, \star^{\mathrm{op}})$ por $a \star^{\mathrm{op}} b := b \star a$.
+- *Semigrupo Livre ($\Sigma^+$):* Dado um alfabeto não-vazio $\Sigma$, o conjunto de todas as palavras finitas não-vazias sobre $\Sigma$ munido da concatenação de strings forma o semigrupo livre gerado por $\Sigma$.
+- *Adjunto de Identidade ($S^1$):* Todo semigrupo $(S, \star)$ pode ser estendido a um [[id: "algebra--monoid--def"][Monoide]] $S^1 = S \sqcup \{1\}$ definindo $1 \star x = x \star 1 = x$ e $1 \star 1 = 1$.
+
+* Teorema Fundamental (Associatividade Generalizada — Lang, Cap. I, §1)
+*Teorema.* Seja $(S, \star)$ um semigrupo. Para qualquer sequência finita $a_1, a_2, \dots, a_n \in S$ ($n \ge 1$), todas as parentizações possíveis da expressão $a_1 \star a_2 \star \dots \star a_n$ produzem exatamente o mesmo elemento de $S$.
+
+/Demonstração (por indução forte sobre $n$)./
+- *Base ($n = 1, 2$):* Há apenas uma parentização possível. Para $n = 3$, $(a_1 \star a_2) \star a_3 = a_1 \star (a_2 \star a_3)$ pelo axioma de associatividade.
+- *Passo Indutivo ($n \ge 3$):* Definimos a parentização canônica à direita $P_n(a_1, \dots, a_n) := a_1 \star P_{n-1}(a_2, \dots, a_n)$. Qualquer outra parentização de $a_1 \star \dots \star a_n$ divide-se no nível externo em $(a_1 \star \dots \star a_k) \star (a_{k+1} \star \dots \star a_n)$ para algum $1 \le k < n$.
+  - Se $k = 1$, pela hipótese de indução no fator direito, o resultado é $a_1 \star P_{n-1}(a_2, \dots, a_n) = P_n$.
+  - Se $k > 1$, pela hipótese de indução em ambos os lados e associatividade:
+    $$P_k(a_1, \dots, a_k) \star P_{n-k}(a_{k+1}, \dots, a_n) = \big(a_1 \star P_{k-1}(a_2, \dots, a_k)\big) \star P_{n-k}(a_{k+1}, \dots, a_n) = a_1 \star \big(P_{k-1}(a_2, \dots, a_k) \star P_{n-k}(a_{k+1}, \dots, a_n)\big) = a_1 \star P_{n-1}(a_2, \dots, a_n) = P_n. \quad \blacksquare$$
+
+* Realizações Computacionais e Formais
+- Especificação equacional com atributo ~[assoc]~ em Maude: [[id: "algebra--magma-semigroup--maude"][Magmas e Semigrupos em Maude]]
+- Formalização dependente e prova da associatividade em Lean 4: [[id: "algebra--magma-semigroup--lean"][Magmas e Semigrupos em Lean 4]]
+- Traits `Magma` e `Semigroup` e semigrupo livre em Rust: [[id: "algebra--magma-semigroup--rust"][Magmas e Semigrupos em Rust]]

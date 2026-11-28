@@ -1,0 +1,32 @@
+:PROPERTIES:
+:ID:       algebra--set--def
+:END:
+#+TITLE: Conjunto
+#+DATE: [2026-11-27 sex]
+#+DESCRIPTION: Noções primitivas de pertinência, inclusão, igualdade extensional, conjunto das partes e operações booleanas sobre conjuntos.
+#+STATUS: semente
+#+NOTE_TYPE: conceito
+#+FILETAGS: :algebra:set-theory:conceito:publish:
+
+* Definição Formal
+Um **conjunto** $A$ é uma coleção bem-definida de objetos, denominados **elementos** de $A$. Escrevemos $x \in A$ quando $x$ pertence a $A$, e $x \notin A$ caso contrário. O **conjunto vazio**, denotado por $\emptyset$, é o único conjunto sem elementos ($\forall x,\; x \notin \emptyset$).
+
+* Inclusão e Extensionalidade
+- *Subconjunto ($\subseteq$):* Dizemos que $A$ é subconjunto de $B$ ($A \subseteq B$) se $\forall x,\; (x \in A \implies x \in B)$.
+- *Axioma da Extensionalidade:* Dois conjuntos são iguais se, e somente se, possuem exatamente os mesmos elementos:
+  $$A = B \iff (A \subseteq B \;\land\; B \subseteq A).$$
+- *Conjunto das Partes ($\mathcal{P}(A)$):* É o conjunto de todos os subconjuntos de $A$:
+  $$\mathcal{P}(A) = \{ S \mid S \subseteq A \}.$$
+  *(Nota: $(\mathcal{P}(A), \subseteq)$ forma um reticulado completo sob [[id: "algebra--order-relation--def"][Relação de Ordem e Reticulados]] e uma Álgebra Booleana).*
+
+* Operações Fundamentais
+Para subconjuntos $A, B \subseteq U$ de um universo $U$:
+- *União ($A \cup B$):* $\{ x \in U \mid x \in A \lor x \in B \}$.
+- *Interseção ($A \cap B$):* $\{ x \in U \mid x \in A \land x \in B \}$. Dois conjuntos são **disjuntos** se $A \cap B = \emptyset$.
+- *Diferença ($A \setminus B$):* $\{ x \in U \mid x \in A \land x \notin B \}$.
+- *Complemento ($A^c$):* $U \setminus A$.
+
+* Conexões
+- Base para pares ordenados: [[id: "algebra--cartesian-product--def"][Produto Cartesiano]]
+- Subconjuntos de produtos cartesianos: [[id: "algebra--relation--def"][Relação]]
+- Decomposição em blocos disjuntos: [[id: "algebra--partition--def"][Partição]]

@@ -1,0 +1,28 @@
+:PROPERTIES:
+:ID:       algebra--cartesian-product--def
+:END:
+#+TITLE: Produto Cartesiano
+#+DATE: [2026-11-27 sex]
+#+DESCRIPTION: Definição de par ordenado (Kuratowski), produto cartesiano A × B, projeções canônicas e propriedade universal do produto.
+#+STATUS: semente
+#+NOTE_TYPE: conceito
+#+FILETAGS: :algebra:set-theory:category-theory:conceito:publish:
+
+* Definição Formal
+Dados dois elementos $a, b$, o **par ordenado** $(a, b)$ caracteriza-se pela propriedade fundamental de igualdade:
+$$(a_1, b_1) = (a_2, b_2) \iff (a_1 = a_2 \;\land\; b_1 = b_2).$$
+*(Na teoria axiomática ZFC, realiza-se via definição de Kuratowski: $(a, b) := \{ \{a\}, \{a, b\} \}$).*
+
+Sejam $A$ e $B$ dois [[id: "algebra--set--def"][Conjunto]]s. O **produto cartesiano** $A \times B$ é o conjunto de todos os pares ordenados com primeira coordenada em $A$ e segunda em $B$:
+$$A \times B = \{ (a, b) \mid a \in A \;\land\; b \in B \}.$$
+Por indução, o produto $n$-ário $A_1 \times \dots \times A_n$ consiste nas $n$-uplas $(a_1, \dots, a_n)$, e escrevemos $A^n = \underbrace{A \times \dots \times A}_{n\text{ vezes}}$.
+
+* Projeções Canônicas e Propriedade Universal
+O produto cartesiano $A \times B$ vem equipado com duas [[id: "algebra--function--def"][Função (Aplicação)]]ões chamadas **projeções canônicas**:
+$$\pi_1 : A \times B \to A, \quad \pi_1(a, b) = a, \qquad\qquad \pi_2 : A \times B \to B, \quad \pi_2(a, b) = b.$$
+
+*Teorema (Propriedade Universal do Produto).* Para todo conjunto $X$ e todo par de funções $f : X \to A$ e $g : X \to B$, existe uma **única** função $\langle f, g \rangle : X \to A \times B$ dada por $\langle f, g \rangle(x) = (f(x), g(x))$ tal que $\pi_1 \circ \langle f, g \rangle = f$ e $\pi_2 \circ \langle f, g \rangle = g$.
+
+* Conexões
+- Subconjuntos de $A \times B$: [[id: "algebra--relation--def"][Relação]]
+- Domínio de operações internas $A \times A \to A$: [[id: "algebra--binary-operation--def"][Operação Binária]]

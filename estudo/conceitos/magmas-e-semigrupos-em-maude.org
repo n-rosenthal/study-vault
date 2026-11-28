@@ -1,0 +1,78 @@
+:PROPERTIES:
+:ID:       algebra--magma-semigroup--maude
+:END:
+#+TITLE: Magmas e Semigrupos em Maude
+#+DATE: [2026-11-27 sex]
+#+DESCRIPTION: Teorias algébricas MAGMA e SEMIGROUP em Maude, atributo [assoc] e realização concreta do semigrupo livre (palavras não-vazias) e semigrupo min/max.
+#+STATUS: semente
+#+NOTE_TYPE: conceito
+#+FILETAGS: :algebra:maude:semigroup-theory:formal-specification:conceito:publish:
+
+* Visão Geral
+No Maude, a distinção entre [[id: "algebra--magma-semigroup--def"][Magma e Semigrupo]] é expressa diretamente pela presença ou ausência do atributo estrutural ~[assoc]~ na declaração do operador binário. Quando ~[assoc]~ é declarado, o motor de reescrita normaliza automaticamente todas as parentizações (realizando computacionalmente o Teorema da Associatividade Generalizada de Lang).
+
+* Teorias e Módulos Funcionais em Maude
+#+begin_src maude
+--- Teoria abstrata de Magma: apenas fechamento sob _*_
+fth MAGMA is
+  sort Elt .
+  op _*_ : Elt Elt -> Elt .
+endfth
+
+--- Teoria abstrata de Semigrupo: Magma com associatividade nativa
+fth SEMIGROUP is
+  sort Elt .
+  op _*_ : Elt Elt -> Elt [assoc] .
+endfth
+
+--- Modelo Concreto 1: Semigrupo Livre Σ+ (palavras não-vazias sobre {a, b, c})
+fmod FREE-SEMIGROUP is
+  sorts Letter Word .
+  subsort Letter < Word .
+
+  ops a b c : -> Letter [ctor] .
+  --- Concatenação associativa sem elemento neutro (palavras não-vazias)
+  op _._ : Word Word -> Word [ctor assoc] .
+
+  --- Homomorfismo de comprimento: len : Σ+ -> (N+, +)
+  protecting NAT .
+  op len : Word -> NzNat .
+  eq len(L:Letter)         = 1 .
+  eq len(W1:Word . W2:Word) = len(W1:Word) + len(W2:Word) .
+endfm
+
+--- Modelo Concreto 2: Semigrupo de Banda (Idempotente) sobre Naturais com `min`
+fmod MIN-SEMIGROUP is
+  protecting NAT .
+  op _/\_ : Nat Nat -> Nat [assoc comm] .
+  vars M N : Nat .
+  ceq M /\ N = M if M <= N .
+  ceq M /\ N = N if N < M .
+endfm
+
+--- Visões certificando que os módulos concretos satisfazem a teoria SEMIGROUP
+view FreeWordAsSemigroup from SEMIGROUP to FREE-SEMIGROUP is
+  sort Elt to Word .
+  op _*_ to _._ .
+endv
+
+view NatMinAsSemigroup from SEMIGROUP to MIN-SEMIGROUP is
+  sort Elt to Nat .
+  op _*_ to _/\_ .
+endv
+#+end_src
+
+* Redução Executável
+#+begin_src maude
+--- O motor [assoc] unifica ((a . b) . c) e (a . (b . c)) na mesma forma normal:
+reduce ((a . b) . c) == (a . (b . c)) .
+--- Resultado: true
+
+reduce len((a . b) . (c . a)) .
+--- Resultado: 4
+#+end_src
+
+* Conexões
+- Definição matemática abstrata: [[id: "algebra--magma-semigroup--def"][Magma e Semigrupo]]
+- Formalização dependente em Lean 4: [[id: "algebra--magma-semigroup--lean"][Magmas e Semigrupos em Lean 4]]
+- Implementação computacional em Rust: [[id: "algebra--magma-semigroup--rust"][Magmas e Semigrupos em Rust]]

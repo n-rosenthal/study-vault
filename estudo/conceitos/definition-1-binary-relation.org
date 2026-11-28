@@ -1,0 +1,99 @@
+:PROPERTIES:
+:ID:       definition--algebra--binary-relation-1
+:END:
+#+TITLE: (definition-1) Relação Binária
+#+DATE: [2026-11-28 sáb]
+#+DESCRIPTION: Definição a partir de conjuntos para relação binária
+#+STATUS: semente
+#+NOTE_TYPE: conceito
+#+FILETAGS: :definition:publish:algebra:conceito:
+
+- Definição
+:PROPERTIES:
+:ID:   definition--algebra--binary-relation-1-ext
+:NAME: (Definition, 1, ext) Relation
+:END:
+
+#+attrs: :id definition--algebra--binary-relation-1-ext
+#+begin_definition
+Sejam \( A \) e \( B \) dois [[id:algebra--set--def][conjuntos]] quaisquer.
+Uma =relação binária= \( \dot{r} \) de \( A \) para \( B \) é um [[id:algebra--set--def][subconjunto]] do [[id:algebra--cartesian-product--def][produto cartesiano]] \( A \times B \), isto é, \( \dot{r} \subseteq A \times B \).
+Quando \( (a, b) \in \dot{r} \), escrevemos \( a \mathrel{\dot{r}} b \) e dizemos que \( a \) está relacionado com \( b \) por \( \dot{r} \).
+#+end_definition
+
+- Formalização
+:PROPERTIES:
+:ID:   definition--algebra--binary-relation-1-form
+:NAME: (Definition, 1, form) Relation
+:END:
+
+#+attrs: :id definition--algebra--binary-relation-1-form
+#+begin_latex
+\BeginDefinition{
+  for="Relação Binária",
+  desc="baseada em conjuntos"
+}
+
+\begin{aligned}
+(1.) &\quad \text{let } A, B : \text{Set} \\
+(2.) &\quad \textit{definition } \dot{r} : \text{Set} \quad \text{where } \dot{r} \subseteq A \times B \\
+(3.) &\quad \textit{notation } (a \mathrel{\dot{r}} b) :\iff (a, b) \in \dot{r} \quad \text{for } a \in A,\; b \in B \\
+(4.) &\quad \textit{domain } \operatorname{dom}(\dot{r}) := \{ a \in A \mid \exists b \in B,\; (a, b) \in \dot{r} \} \\
+(5.) &\quad \textit{codomain } \operatorname{cod}(\dot{r}) := \{ b \in B \mid \exists a \in A,\; (a, b) \in \dot{r} \}
+\end{aligned}
+
+\EndDefinition
+#+end_latex
+
+- Realização
+:PROPERTIES:
+:ID:   definition--algebra--binary-relation-1-lean
+:NAME: (Definition, 1, lean) Relation
+:END:
+
+#+attrs: :id definition--algebra--binary-relation-1-lean
+#+begin_src lean :tangle lean/StrangeAlgebras/Definitions/BinaryRelation1.lean
+namespace StrangeAlgebras.Definitions
+
+/-- Realização conjuntista de Relação Binária:
+    um subconjunto de A × B representado por seu predicado característico `mem`,
+    ou equivalentemente pela correspondência curried `A → B → Prop`. -/
+structure BinaryRelation (A : Type u) (B : Type v) where
+  mem : A × B → Prop
+
+namespace BinaryRelation
+
+/-- Notação infixa `a ṙ b` correspondendo a `(a, b) ∈ ṙ` -/
+def rel {A : Type u} {B : Type v} (r : BinaryRelation A B) (a : A) (b : B) : Prop :=
+  r.mem (a, b)
+
+/-- Domínio efetivo de `r`: `{ a ∈ A | ∃ b ∈ B, (a, b) ∈ r }` -/
+def dom {A : Type u} {B : Type v} (r : BinaryRelation A B) (a : A) : Prop :=
+  ∃ b : B, r.mem (a, b)
+
+/-- Imagem (contradomínio efetivo) de `r`: `{ b ∈ B | ∃ a ∈ A, (a, b) ∈ r }` -/
+def img {A : Type u} {B : Type v} (r : BinaryRelation A B) (b : B) : Prop :=
+  ∃ a : A, r.mem (a, b)
+
+/-- Equivalência canônica com a forma curried `A → B → Prop` -/
+def toPred {A : Type u} {B : Type v} (r : BinaryRelation A B) : A → B → Prop :=
+  fun a b => r.mem (a, b)
+
+def ofPred {A : Type u} {B : Type v} (p : A → B → Prop) : BinaryRelation A B where
+  mem pair := p pair.1 pair.2
+
+/-- Extensionalidade: duas relações binárias são iguais se possuem exatamente os mesmos pares -/
+@[ext]
+theorem ext {A : Type u} {B : Type v} {r₁ r₂ : BinaryRelation A B}
+    (h : ∀ (a : A) (b : B), r₁.mem (a, b) ↔ r₂.mem (a, b)) : r₁ = r₂ := by
+  cases r₁ with
+  | mk m₁ =>
+    cases r₂ with
+    | mk m₂ =>
+      have hm : m₁ = m₂ := funext fun ⟨a, b⟩ => propext (h a b)
+      subst hm
+      rfl
+
+end BinaryRelation
+end StrangeAlgebras.Definitions
+#+end_src

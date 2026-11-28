@@ -1,0 +1,30 @@
+:PROPERTIES:
+:ID:       algebra--partition--def
+:END:
+#+TITLE: Partição
+#+DATE: [2026-11-27 sex]
+#+DESCRIPTION: Definição de partição de um conjunto em blocos não-vazios mutuamente disjuntos e sua bijeção canônica com relações de equivalência.
+#+STATUS: semente
+#+NOTE_TYPE: conceito
+#+FILETAGS: :algebra:set-theory:conceito:publish:
+
+* Definição Formal
+Seja $A$ um [[id: "algebra--set--def"][Conjunto]]. Uma **partição** de $A$ é uma família $\Pi \subseteq \mathcal{P}(A)$ de subconjuntos de $A$ (chamados **blocos** ou **células**) satisfazendo três condições:
+1. *Blocos Não-Vazios:* $\forall B \in \Pi,\; B \neq \emptyset$ (ou seja, $\emptyset \notin \Pi$).
+2. *Cobertura Total:* A união de todos os blocos recupera $A$:
+   $$\bigcup_{B \in \Pi} B = A \qquad \big(\forall a \in A,\; \exists B \in \Pi,\; a \in B\big).$$
+3. *Disjunção Mútua:* Blocos distintos não possuem elementos em comum:
+   $$\forall B_1, B_2 \in \Pi,\quad B_1 \neq B_2 \implies B_1 \cap B_2 = \emptyset.$$
+
+* Correspondência Fundamental com Relações de Equivalência
+*Teorema.* Existe uma bijeção canônica entre o conjunto das partições de $A$ e o conjunto das [[id: "algebra--equivalence-relation--def"][Relação de Equivalência e Conjunto Quociente]]s sobre $A$:
+- Dada ${\sim}$ sobre $A$, o conjunto quociente $\Pi_{\sim} = A/{\sim} = \{ [a]_{\sim} \mid a \in A \}$ é uma partição de $A$.
+- Dada uma partição $\Pi$ de $A$, a relação $a \sim_{\Pi} b \iff \exists B \in \Pi,\; (a \in B \land b \in B)$ é uma relação de equivalência cujo quociente é exatamente $\Pi$.
+
+* Papel na Álgebra de Lang
+- **Teorema de Lagrange (Cap. I, §2):** As classes laterais à esquerda $\{ gH \mid g \in G \}$ de um subgrupo $H \le G$ formam uma partição de $G$ em blocos de mesma cardinalidade $|H|$, implicando $|G| = [G : H] \cdot |H|$.
+- **Equação de Classes (Cap. I, §5):** A ação de um grupo $G$ sobre um conjunto $X$ particiona $X$ em órbitas disjuntas $X = \bigsqcup \mathcal{O}(x)$.
+
+* Conexões
+- Base conjuntista: [[id: "algebra--set--def"][Conjunto]]
+- Correspondência biunívoca: [[id: "algebra--equivalence-relation--def"][Relação de Equivalência e Conjunto Quociente]]

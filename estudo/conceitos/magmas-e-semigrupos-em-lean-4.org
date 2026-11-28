@@ -1,0 +1,81 @@
+:PROPERTIES:
+:ID:       algebra--magma-semigroup--lean
+:END:
+#+TITLE: Magmas e Semigrupos em Lean 4
+#+DATE: [2026-11-27 sex]
+#+DESCRIPTION: Formalização das type classes Magma e Semigroup em Lean 4, semigrupo oposto, semigrupo livre (NonEmptyList) e prova de associatividade generalizada.
+#+STATUS: semente
+#+NOTE_TYPE: conceito
+#+FILETAGS: :algebra:lean:semigroup-theory:formal-specification:conceito:publish:
+
+* Visão Geral
+No Lean 4, formalizamos [[id: "algebra--magma-semigroup--def"][Magma e Semigrupo]] por meio de uma hierarquia de *type classes* onde `Semigroup` estende `Magma` exigindo uma prova do campo `op_assoc`. Provamos que o **semigrupo oposto** $S^{\mathrm{op}}$ preserva a associatividade e formalizamos o **semigrupo livre** sobre um alfabeto $\Sigma$ usando listas não-vazias (`NonEmptyList`).
+
+* Formalização e Provas em Lean 4
+#+begin_src lean4 :tangle lean/StrangeAlgebras/Semigroup.lean
+namespace StrangeAlgebras.Concepts
+
+/-- Magma: conjunto α equipado com uma operação binária interna `op` -/
+class Magma (α : Type u) where
+  op : α → α → α
+
+infixl:70 " ⋆ " => Magma.op
+
+/-- Semigrupo (Lang, Cap. I, §1): Magma cuja operação é associativa -/
+class Semigroup (α : Type u) extends Magma α where
+  op_assoc : ∀ a b c : α, (a ⋆ b) ⋆ c = a ⋆ (b ⋆ c)
+
+section SemigroupConstructions
+variable {α : Type u} [Semigroup α]
+
+/-- Teorema 1 (Reassociação de 4 fatores): exemplo direto da associatividade generalizada -/
+theorem op_assoc4 (a b c d : α) : ((a ⋆ b) ⋆ c) ⋆ d = a ⋆ (b ⋆ (c ⋆ d)) := by
+  calc ((a ⋆ b) ⋆ c) ⋆ d
+    _ = (a ⋆ (b ⋆ c)) ⋆ d := by rw [Semigroup.op_assoc]
+    _ = a ⋆ ((b ⋆ c) ⋆ d) := by rw [Semigroup.op_assoc]
+    _ = a ⋆ (b ⋆ (c ⋆ d)) := by rw [Semigroup.op_assoc]
+
+/-- Semigrupo Oposto Sᵒᵖ (wrapper de tipo para evitar sobreposição de instâncias) -/
+structure Opposite (α : Type u) where
+  val : α
+
+instance : Magma (Opposite α) where
+  op x y := ⟨y.val ⋆ x.val⟩
+
+/-- Teorema 2: O semigrupo oposto Sᵒᵖ de um semigrupo S também é um semigrupo -/
+instance : Semigroup (Opposite α) where
+  op_assoc x y z := by
+    dsimp [Magma.op]
+    rw [Semigroup.op_assoc]
+
+/-- Semigrupo Livre Σ⁺: listas não-vazias sobre um alfabeto Σ -/
+inductive NonEmptyList (Σ : Type u) where
+  | single : Σ → NonEmptyList Σ
+  | cons   : Σ → NonEmptyList Σ → NonEmptyList Σ
+
+def NonEmptyList.append {Σ : Type u} : NonEmptyList Σ → NonEmptyList Σ → NonEmptyList Σ
+  | .single x, ys   => .cons x ys
+  | .cons x xs, ys  => .cons x (xs.append ys)
+
+instance {Σ : Type u} : Magma (NonEmptyList Σ) where
+  op := NonEmptyList.append
+
+/-- Teorema 3: A concatenação de listas não-vazias satisfaz a associatividade (Semigrupo Livre) -/
+theorem NonEmptyList.append_assoc {Σ : Type u} (xs ys zs : NonEmptyList Σ) :
+    (xs.append ys).append zs = xs.append (ys.append zs) := by
+  induction xs with
+  | single x => rfl
+  | cons x xs ih =>
+    simp [NonEmptyList.append, ih]
+
+instance {Σ : Type u} : Semigroup (NonEmptyList Σ) where
+  op_assoc := NonEmptyList.append_assoc
+
+end SemigroupConstructions
+end StrangeAlgebras.Concepts
+#+end_src
+
+* Conexões
+- Definição matemática abstrata: [[id: "algebra--magma-semigroup--def"][Magma e Semigrupo]]
+- Especificação equacional em Maude: [[id: "algebra--magma-semigroup--maude"][Magmas e Semigrupos em Maude]]
+- Implementação computacional em Rust: [[id: "algebra--magma-semigroup--rust"][Magmas e Semigrupos em Rust]]

@@ -1,0 +1,147 @@
+:PROPERTIES:
+:ID:       algebra--magma-semigroup--rust
+:END:
+#+TITLE: Magmas e Semigrupos em Rust
+#+DATE: [2026-11-27 sex]
+#+DESCRIPTION: Implementação das traits Magma e Semigroup em Rust, redução paralela/associativa (sconcat), semigrupo livre e tabela de Cayley finita.
+#+STATUS: semente
+#+NOTE_TYPE: conceito
+#+FILETAGS: :algebra:rust:semigroup-theory:conceito:publish:
+
+* Visão Geral
+Em Rust, modelamos [[id: "algebra--magma-semigroup--def"][Magma e Semigrupo]] através de uma hierarquia de *traits* (`pub trait Semigroup: Magma`). Como Rust não verifica equações em tempo de compilação, `Semigroup` atua como uma *marker trait* acompanhada de testes de propriedade (`verify_associativity_on`) e habilita operações genéricas que dependem estritamente da associatividade, como a **exponenciação binária** ($a^n$ para $n \ge 1$ em $O(\log n)$) e a **redução não-vazia (`sconcat`)** sem precisar de um elemento neutro!
+
+* Implementação em Rust
+#+begin_src rust :tangle rust/crates/algebra-core/src/semigroup.rs
+/// Magma: conjunto equipado com uma operação binária fechada `op`
+pub trait Magma: Clone + PartialEq {
+    fn op(&self, other: &Self) -> Self;
+}
+
+/// Semigrupo (Lang, Cap. I, §1): Magma cuja operação satisfaz (a * b) * c == a * (b * c)
+pub trait Semigroup: Magma {
+    /// Exponenciação binária a^n (para n >= 1) em O(log n) passos graças à associatividade
+    fn pow_nonzero(&self, mut n: u64) -> Self {
+        assert!(n >= 1, "Semigrupos sem identidade exigem expoente n >= 1");
+        let mut base = self.clone();
+        while n & 1 == 0 {
+            base = base.op(&base);
+            n >>= 1;
+        }
+        let mut acc = base.clone();
+        n >>= 1;
+        while n > 0 {
+            base = base.op(&base);
+            if n & 1 == 1 {
+                acc = acc.op(&base);
+            }
+            n >>= 1;
+        }
+        acc
+    }
+
+    /// Reduz uma fatia não-vazia [a_1, a_2, ..., a_k] usando associatividade
+    fn sconcat(slice: &[Self]) -> Option<Self> {
+        let (first, rest) = slice.split_first()?;
+        Some(rest.iter().fold(first.clone(), |acc, x| acc.op(x)))
+    }
+}
+
+/// Verifica exaustivamente o axioma de associatividade sobre um domínio finito
+pub fn is_associative_on<M: Magma>(domain: &[M]) -> bool {
+    for a in domain {
+        for b in domain {
+            for c in domain {
+                if a.op(b).op(c) != a.op(&b.op(c)) {
+                    return false;
+                }
+            }
+        }
+    }
+    true
+}
+
+/// Exemplo 1: Semigrupo Livre Σ+ (palavras finitas não-vazias sobre alfabeto T)
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct FreeSemigroup<T: Clone + PartialEq> {
+    pub letters: Vec<T>,
+}
+
+impl<T: Clone + PartialEq> FreeSemigroup<T> {
+    pub fn single(letter: T) -> Self {
+        Self {
+            letters: vec![letter],
+        }
+    }
+}
+
+impl<T: Clone + PartialEq> Magma for FreeSemigroup<T> {
+    fn op(&self, other: &Self) -> Self {
+        let mut combined = Vec::with_capacity(self.letters.len() + other.letters.len());
+        combined.extend_from_slice(&self.letters);
+        combined.extend_from_slice(&other.letters);
+        Self { letters: combined }
+    }
+}
+
+impl<T: Clone + PartialEq> Semigroup for FreeSemigroup<T> {}
+
+/// Exemplo 2: Magma NÃO-associativo (Subtração em i64: (a - b) - c != a - (b - c))
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct SubMagma(pub i64);
+
+impl Magma for SubMagma {
+    fn op(&self, other: &Self) -> Self {
+        SubMagma(self.0 - other.0)
+    }
+}
+
+/// Exemplo 3: Semigrupo Banda (Idempotente) sob mínimo: (N, min)
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub struct MinSemigroup(pub u64);
+
+impl Magma for MinSemigroup {
+    fn op(&self, other: &Self) -> Self {
+        MinSemigroup(self.0.min(other.0))
+    }
+}
+
+impl Semigroup for MinSemigroup {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_free_semigroup_pow_and_sconcat() {
+        let w = FreeSemigroup::single('a').op(&FreeSemigroup::single('b'));
+        // ("ab")^3 == "ababab"
+        let w3 = w.pow_nonzero(3);
+        assert_eq!(w3.letters, vec!['a', 'b', 'a', 'b', 'a', 'b']);
+
+        let words = vec![
+            FreeSemigroup::single('x'),
+            FreeSemigroup::single('y'),
+            FreeSemigroup::single('z'),
+        ];
+        assert_eq!(
+            FreeSemigroup::sconcat(&words).unwrap().letters,
+            vec!['x', 'y', 'z']
+        );
+    }
+
+    #[test]
+    fn test_associativity_checker() {
+        let sub_domain = vec![SubMagma(1), SubMagma(2), SubMagma(3)];
+        assert!(!is_associative_on(&sub_domain));
+
+        let min_domain = vec![MinSemigroup(10), MinSemigroup(3), MinSemigroup(7)];
+        assert!(is_associative_on(&min_domain));
+    }
+}
+#+end_src
+
+* Conexões
+- Definição matemática abstrata: [[id: "algebra--magma-semigroup--def"][Magma e Semigrupo]]
+- Especificação equacional em Maude: [[id: "algebra--magma-semigroup--maude"][Magmas e Semigrupos em Maude]]
+- Formalização dependente em Lean 4: [[id: "algebra--magma-semigroup--lean"][Magmas e Semigrupos em Lean 4]]
